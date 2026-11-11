@@ -31,6 +31,7 @@ class HardwareConfig {
     this.displayPort = '',
     this.displayBaud = 2400,
     this.displayProtocol = DisplayProtocol.led8,
+    this.simulate = true,
   });
 
   String ticketPrinterName;
@@ -44,6 +45,10 @@ class HardwareConfig {
   int displayBaud;
   DisplayProtocol displayProtocol;
 
+  /// Mode simulation : rien n'est envoyé au matériel, tout s'affiche à l'écran.
+  /// Activé par défaut pour tester l'appli hors de la boutique.
+  bool simulate;
+
   Map<String, dynamic> toJson() => {
         'ticketPrinterName': ticketPrinterName,
         'codePage': codePage,
@@ -55,6 +60,7 @@ class HardwareConfig {
         'displayPort': displayPort,
         'displayBaud': displayBaud,
         'displayProtocol': displayProtocol.name,
+        'simulate': simulate,
       };
 
   factory HardwareConfig.fromJson(Map<String, dynamic> j) {
@@ -75,6 +81,7 @@ class HardwareConfig {
       displayPort: (j['displayPort'] ?? '') as String,
       displayBaud: (j['displayBaud'] ?? 2400) as int,
       displayProtocol: proto,
+      simulate: (j['simulate'] ?? true) as bool,
     );
   }
 

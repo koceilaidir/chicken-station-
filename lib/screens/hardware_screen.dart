@@ -1,4 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+
+import '../data/repos.dart';
 
 import '../hardware/customer_display.dart';
 import '../hardware/escpos.dart';
@@ -65,8 +69,8 @@ class _HardwareScreenState extends State<HardwareScreen> {
   }
 
   Future<void> _init() async {
-    final cfg = await HardwareConfig.load();
-    _svc = HardwareService(cfg);
+    _svc = HardwareService.I;
+    final cfg = _svc.config;
     _ipCtrl.text = cfg.kitchenIp;
     _portCtrl.text = '${cfg.kitchenPort}';
     if (!mounted) return;
@@ -93,9 +97,18 @@ class _HardwareScreenState extends State<HardwareScreen> {
     _svc.config = cfg;
     try {
       await cfg.save();
+      _logSave();
     } catch (e) {
       _addLog(false, 'Enregistrement des réglages impossible : $e');
     }
+  }
+
+  Timer? _saveLog;
+
+  /// Une seule ligne dans le journal pour une série de réglages rapprochés.
+  void _logSave() {
+    _saveLog?.cancel();
+    _saveLog = Timer(const Duration(seconds: 5), () => logActivity('materiel', 'Réglages du matériel modifiés'));
   }
 
   void _update(void Function(HardwareConfig c) change) {
@@ -147,6 +160,7 @@ class _HardwareScreenState extends State<HardwareScreen> {
           await _svc.sendToDisplay(
             CustomerDisplay.frame(t.protocol, amount: t.amount, line2: 'ESSAI ${t.number}'),
             baud: t.baud,
+            preview: t.amount,
           );
         } catch (e) {
           _status['display'] = _Status(false, '$e');
@@ -186,6 +200,8 @@ class _HardwareScreenState extends State<HardwareScreen> {
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
       children: [
         _header(),
+        const SizedBox(height: 16),
+        _simulationCard(cfg),
         const SizedBox(height: 16),
         _twoColumns(_ticketCard(cfg), _kitchenCard(cfg)),
         const SizedBox(height: 16),
@@ -228,6 +244,48 @@ class _HardwareScreenState extends State<HardwareScreen> {
         const SizedBox(width: 10),
         PrimaryButton(label: 'Tout tester', onPressed: _busy.isEmpty ? _testAll : null),
       ],
+    );
+  }
+
+  Widget _simulationCard(HardwareConfig cfg) {
+    return IosCard(
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: cfg.simulate ? AppColors.yellowSoft : AppColors.greenSoft,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(cfg.simulate ? Icons.science_outlined : Icons.power_outlined, color: AppColors.text),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(cfg.simulate ? 'Mode simulation activé' : 'Matériel réel',
+                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+                Text(
+                  cfg.simulate
+                      ? "Tickets, bons cuisine, tiroir et écran client s'affichent à l'écran. Rien n'est envoyé au matériel."
+                      : 'Tout est envoyé aux imprimantes, au tiroir et à l\'écran client.',
+                  style: const TextStyle(fontSize: 12.5, color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: cfg.simulate,
+            activeTrackColor: AppColors.yellow,
+            onChanged: (v) {
+              _update((c) => c.simulate = v);
+              _addLog(true, v ? 'Mode simulation activé.' : 'Mode simulation désactivé : matériel réel.');
+            },
+          ),
+        ],
+      ),
     );
   }
 

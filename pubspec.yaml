@@ -1,7 +1,7 @@
 name: chicken_station
 description: "Chicken Station — caisse et gestion du fast-food. Developed by Minerva."
 publish_to: 'none'
-version: 0.1.0+1
+version: 0.5.0+8
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -11,6 +11,10 @@ dependencies:
     sdk: flutter
   ffi: ^2.1.0
   path_provider: ^2.1.0
+  sqlite3: ^2.4.0
+  sqlite3_flutter_libs: ^0.5.20
+  crypto: ^3.0.3
+  file_selector: ^1.0.3
 
 dev_dependencies:
   flutter_test:
@@ -19,3 +23,17 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/images/
+    - data/seed/
+    - data/seed/photos/ingredients/
+    - data/seed/photos/menu/boissons/
+    - data/seed/photos/menu/bowls/
+    - data/seed/photos/menu/box/
+    - data/seed/photos/menu/buffalo/
+    - data/seed/photos/menu/burgers/
+    - data/seed/photos/menu/fajitas/
+    - data/seed/photos/menu/galettes/
+    - data/seed/photos/menu/salades/
+    - data/seed/photos/menu/supplements/
+    - data/seed/photos/menu/tacos/

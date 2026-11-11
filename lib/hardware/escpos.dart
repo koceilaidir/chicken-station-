@@ -32,6 +32,12 @@ class EscPos {
   final BytesBuilder _b = BytesBuilder();
   int _codePage;
   int _sizeW = 1;
+  PosAlign _align = PosAlign.left;
+  final StringBuffer _pending = StringBuffer();
+  final List<String> _preview = [];
+
+  /// Aperçu texte du ticket (mode simulation).
+  String get preview => [..._preview, if (_pending.isNotEmpty) _pending.toString()].join('\n');
 
   EscPos setCodePage(int n) {
     _codePage = n;
@@ -40,6 +46,7 @@ class EscPos {
   }
 
   EscPos align(PosAlign a) {
+    _align = a;
     _b.add([0x1B, 0x61, a.index]); // ESC a n
     return this;
   }
@@ -60,13 +67,30 @@ class EscPos {
 
   EscPos text(String s) {
     _b.add(encode(s, _codePage));
+    _pending.write(s);
     return this;
   }
 
   EscPos line([String s = '']) {
     text(s);
     _b.addByte(0x0A);
+    _flushPreview();
     return this;
+  }
+
+  void _flushPreview() {
+    var t = _pending.toString();
+    _pending.clear();
+    // Les caractères agrandis sont simulés en les espaçant.
+    if (_sizeW > 1) t = t.split('').join(' ');
+    if (t.length < width) {
+      if (_align == PosAlign.center) {
+        t = ' ' * ((width - t.length) ~/ 2) + t;
+      } else if (_align == PosAlign.right) {
+        t = ' ' * (width - t.length) + t;
+      }
+    }
+    _preview.add(t);
   }
 
   /// Ligne avec un texte à gauche et un texte à droite.
@@ -83,16 +107,29 @@ class EscPos {
     return line(l.padRight(space) + right);
   }
 
+  /// Image noir et blanc (GS v 0) : [bits] = 1 bit par point, [widthBytes] octets par ligne.
+  /// Centrée selon l'alignement courant. Dans l'aperçu, remplacée par [label].
+  EscPos image(Uint8List bits, int widthBytes, int height, {String label = '[ logo ]'}) {
+    _b.add([0x1D, 0x76, 0x30, 0x00, widthBytes & 0xFF, widthBytes >> 8, height & 0xFF, height >> 8]);
+    _b.add(bits);
+    _b.addByte(0x0A);
+    _pending.write(label);
+    _flushPreview();
+    return this;
+  }
+
   EscPos separator([String ch = '-']) => line(ch * (width ~/ _sizeW));
 
   EscPos feed(int lines) {
     _b.add([0x1B, 0x64, lines.clamp(0, 255).toInt()]); // ESC d n
+    if (lines > 0) _preview.add('');
     return this;
   }
 
   /// Avance le papier puis coupe (coupe partielle).
   EscPos cut() {
     _b.add(const [0x1D, 0x56, 0x42, 0x00]); // GS V 66 0
+    _preview.add('- - - - - - - - - - - - (coupe) - - - - - - - - - - - -');
     return this;
   }
 
@@ -100,6 +137,7 @@ class EscPos {
   /// [pin] 0 = broche 2, 1 = broche 5.
   EscPos openDrawer({int pin = 0}) {
     _b.add([0x1B, 0x70, pin == 1 ? 1 : 0, 0x19, 0xFA]); // ESC p m t1 t2
+    _preview.add('[ ouverture du tiroir-caisse ]');
     return this;
   }
 
