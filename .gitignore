@@ -22,3 +22,6 @@ build/
 
 # Sources SQLite extraites par tools/brand_windows.ps1
 third_party/sqlite-autoconf-3520000/
+
+# Installateur genere
+dist/

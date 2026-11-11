@@ -124,7 +124,7 @@ class _MonthGoalScreenState extends State<MonthGoalScreen> {
           KeyValueRow('Marge', fmtDa(g.margin), bold: true),
           const SizedBox(height: 8),
           KeyValueRow('Charges payées', fmtDa(g.charges), sub: 'loyer, électricité, factures… payés ce mois (Dépenses › Charges)'),
-          KeyValueRow('Salaires du mois', fmtDa(g.salaries), sub: 'dus aux employés (Dépenses › Employés)'),
+          KeyValueRow('Salaires du mois', fmtDa(g.salaries), sub: 'salaires + primes − retenues (Dépenses › Employés)'),
           KeyValueRow('Autres dépenses', fmtDa(g.otherExpenses), sub: 'Entretien et Divers du mois'),
           KeyValueRow('À couvrir', fmtDa(g.target), bold: true),
           const SizedBox(height: 8),

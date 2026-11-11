@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/models.dart';
+import '../data/attendance.dart';
 import '../data/purchasing.dart';
 import '../data/repos.dart';
 import '../data/stock.dart';
@@ -634,6 +635,7 @@ class _PurchasingScreenState extends State<PurchasingScreen> {
                 ],
               ),
             ),
+          if (e.worksIn(mk)) _attendanceCard(e, mk, m),
           const SizedBox(height: 12),
           SectionLabel('Paie de ${fmtMonth(_month)}'),
           if (!e.worksIn(mk))
@@ -643,6 +645,7 @@ class _PurchasingScreenState extends State<PurchasingScreen> {
             ),
           KeyValueRow('Salaire du mois', fmtDa(m.salary)),
           if (m.bonus > 0) KeyValueRow('Primes', '+ ${fmtDa(m.bonus)}', valueColor: AppColors.greenText),
+          if (m.deduction > 0) KeyValueRow('Retenues (absences)', '− ${fmtDa(m.deduction)}', valueColor: AppColors.redText),
           KeyValueRow('Acomptes déjà donnés', '− ${fmtDa(m.advances)}'),
           KeyValueRow('Salaire déjà versé', '− ${fmtDa(m.paid)}'),
           KeyValueRow(
@@ -669,7 +672,7 @@ class _PurchasingScreenState extends State<PurchasingScreen> {
           if (lines.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 10), child: Text('Rien ce mois-ci.')),
           for (final l in lines)
             _HistoryRow(
-              title: PayLine.kindLabels[l.kind] ?? l.kind,
+              title: '${PayLine.kindLabels[l.kind] ?? l.kind}${l.origin == 'pointage' ? ' (pointage)' : ''}',
               value: fmtDa(l.amount),
               sub: [
                 fmtDateTime(l.at),
@@ -685,6 +688,97 @@ class _PurchasingScreenState extends State<PurchasingScreen> {
                       _guard(() => PayrollRepo.cancelLine(l.id, _uid, reason), 'Ligne annulée.');
                     },
             ),
+        ],
+      ),
+    );
+  }
+
+  /// Bilan du pointage du mois et passage en prime (doubles) ou retenue (absences), toujours sur décision.
+  Widget _attendanceCard(Employee e, String mk, PayMonth m) {
+    final r = AttendanceRepo.recap(e, mk);
+    final bonusApplied = PayrollRepo.fromAttendance(e.id, mk, 'prime');
+    final dedApplied = PayrollRepo.fromAttendance(e.id, mk, 'retenue');
+    String days(num n) => n == n.truncate() ? '${n.toInt()}' : n.toString().replaceAll('.', ',');
+    Widget action(String kind, int suggested, int applied, String what) {
+      if (suggested == applied) {
+        return suggested == 0
+            ? const SizedBox.shrink()
+            : Text('✓ ${kind == 'prime' ? 'Prime' : 'Retenue'} de ${fmtDa(applied)} déjà comptée',
+                style: const TextStyle(color: AppColors.greenText, fontWeight: FontWeight.w600));
+      }
+      final label = applied == 0
+          ? '${kind == 'prime' ? 'Ajouter en prime' : 'Retenir'} · ${fmtDa(suggested)}'
+          : 'Mettre à jour · ${fmtDa(applied)} → ${fmtDa(suggested)}';
+      return SecondaryButton(
+        label: label,
+        onPressed: () async {
+          final ok = await confirm(
+            context,
+            kind == 'prime' ? 'Prime pour doubles journées ?' : 'Retenue pour absences ?',
+            '$what × ${fmtDa(r.dayValue)} (salaire ${fmtDa(r.salary)} ÷ ${r.openDaysWholeMonth} jours d\'ouverture) = ${fmtDa(suggested)}.\n'
+                '${kind == 'prime' ? 'Ajouté à ce qui lui est dû' : 'Retiré de ce qui lui est dû'} pour ${fmtMonth(_month)}. '
+                'Aucun argent ne sort maintenant.',
+            ok: 'Valider',
+          );
+          if (!ok || !mounted) return;
+          _guard(
+            () => PayrollRepo.setFromAttendance(
+              userId: _uid,
+              employee: e,
+              month: mk,
+              kind: kind,
+              amount: suggested,
+              note: '$what × ${fmtDa(r.dayValue)}',
+            ),
+            suggested == 0 ? 'Ligne du pointage retirée.' : '${kind == 'prime' ? 'Prime' : 'Retenue'} de ${fmtDa(suggested)} enregistrée.',
+          );
+        },
+      );
+    }
+
+    final doublesTxt = '${r.doubles} double(s) journée(s)';
+    final missedTxt = '${days(r.missedDays)} jour(s) manqué(s)';
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: AppColors.fill, borderRadius: BorderRadius.circular(12)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SectionLabel('Pointage de ${fmtMonth(_month)}'),
+          const SizedBox(height: 4),
+          Text(
+            '${r.journee} journée(s) · ${r.demi} demi · ${r.doubles} double(s) · ${r.repos} repos · '
+            '${r.absent} absence(s) · ${r.closedDays} jour(s) de fermeture',
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          Text(
+            'Valeur d\'une journée : ${fmtDa(r.salary)} ÷ ${r.openDaysWholeMonth} jours d\'ouverture = ${fmtDa(r.dayValue)}',
+            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          ),
+          if (r.unmarked > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                '${r.unmarked} jour(s) d\'ouverture pas encore pointé(s) : complétez le Pointage avant de payer. '
+                'Ils ne sont pas comptés comme absence.',
+                style: const TextStyle(color: AppColors.redText, fontWeight: FontWeight.w600),
+              ),
+            ),
+          const SizedBox(height: 8),
+          if (r.doubles > 0 || bonusApplied > 0) ...[
+            Text('Doubles journées : $doublesTxt → prime proposée ${fmtDa(r.suggestedBonus)}'),
+            const SizedBox(height: 4),
+            Align(alignment: Alignment.centerLeft, child: action('prime', r.suggestedBonus, bonusApplied, doublesTxt)),
+            const SizedBox(height: 8),
+          ],
+          if (r.missedDays > 0 || dedApplied > 0) ...[
+            Text('Absences : $missedTxt → retenue proposée ${fmtDa(r.suggestedDeduction)}'),
+            const SizedBox(height: 4),
+            Align(alignment: Alignment.centerLeft, child: action('retenue', r.suggestedDeduction, dedApplied, missedTxt)),
+          ],
+          if (r.doubles == 0 && r.missedDays == 0 && bonusApplied == 0 && dedApplied == 0)
+            const Text('Ni double journée ni absence ce mois.', style: TextStyle(color: AppColors.textSecondary)),
         ],
       ),
     );

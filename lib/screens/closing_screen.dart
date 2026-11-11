@@ -240,7 +240,7 @@ class _ClosingScreenState extends State<ClosingScreen> {
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
       children: [
         PageHeader(
-          title: 'Clôture du jour',
+          title: 'Caisse du jour',
           subtitle: day == null ? 'Aucune journée ouverte' : '${fmtLongDate(day.openedAt)} · ouverte à ${fmtTime(day.openedAt)}',
           actions: [
             if (Session.I.can(Perm.recette) && _lastClosed() != null)
@@ -326,21 +326,30 @@ class _ClosingScreenState extends State<ClosingScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (seeMoney) ...[
-          Row(
-            children: [
-              Expanded(child: StatTile(label: "Chiffre d'affaires", value: fmtDa(s.totalSales))),
-              const SizedBox(width: 12),
-              Expanded(child: StatTile(label: 'Tickets', value: '${s.tickets}', sub: 'panier moyen ${fmtDa(s.averageTicket)}')),
-              const SizedBox(width: 12),
-              Expanded(child: StatTile(label: 'Dont TPE', value: fmtDa(s.cardSales))),
-            ],
-          ),
-          const SizedBox(height: 12),
-          StatTile(
-            label: 'Argent dans la caisse en ce moment',
-            value: fmtDa(s.expectedInDrawer),
-            sub: 'Fond ${fmtDa(day.openingFund)} + espèces ${fmtDa(s.cashSales)} − dépenses ${fmtDa(s.cashExpenses)}',
-            highlight: true,
+          // Résumé : ce qui est entré, ce qui est sorti. La recette ne compte jamais le fond.
+          IosCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SectionLabel('Résumé de la journée'),
+                const SizedBox(height: 4),
+                KeyValueRow('Fond ramené ce matin', fmtDa(day.openingFund)),
+                KeyValueRow(
+                  'Recette du jour (sans le fond)',
+                  fmtDa(s.totalSales),
+                  bold: true,
+                  sub: '${s.tickets} ticket(s) · espèces ${fmtDa(s.cashSales)} · TPE ${fmtDa(s.cardSales)}',
+                ),
+                KeyValueRow('Entré en espèces', '+ ${fmtDa(s.cashSales)}', valueColor: AppColors.greenText),
+                KeyValueRow('Sorti de la caisse (dépenses)', '− ${fmtDa(s.cashExpenses)}', valueColor: AppColors.redText),
+                KeyValueRow(
+                  'Recette en espèces après dépenses',
+                  fmtDa(s.cashSales - s.cashExpenses),
+                  bold: true,
+                  sub: 'ce que la journée laisse en plus du fond',
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 16),
         ],
@@ -350,7 +359,7 @@ class _ClosingScreenState extends State<ClosingScreen> {
             children: [
               Row(
                 children: [
-                  const SectionLabel('Dépenses du jour'),
+                  const SectionLabel('Sorties du jour'),
                   const Spacer(),
                   if (Session.I.can(Perm.depense))
                     TextButton.icon(
@@ -373,9 +382,7 @@ class _ClosingScreenState extends State<ClosingScreen> {
                         child: KeyValueRow(
                           e.cancelled ? '${e.label} (annulée)' : e.label,
                           fmtDa(e.amount),
-                          sub: e.cancelled
-                              ? 'Annulée · ${e.cancelReason}'
-                              : '${e.category} · ${e.source == 'caisse' ? 'payé depuis la caisse' : 'payé depuis le coffre'} · ${fmtTime(e.createdAt)} · ${e.userName}',
+                          sub: e.cancelled ? 'Annulée' : (e.source == 'caisse' ? 'de la caisse' : 'du coffre (pas dans le tiroir)'),
                         ),
                       ),
                     ),
@@ -404,6 +411,24 @@ class _ClosingScreenState extends State<ClosingScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     SectionLabel(seeMoney ? 'Comptage de la caisse' : "Comptage à l'aveugle"),
+                    if (seeMoney) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(color: AppColors.yellowSoft, borderRadius: BorderRadius.circular(12)),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Vous devez trouver (fond compris)', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                            Text(fmtDa(s.expectedInDrawer), style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800)),
+                            Text(
+                              'fond ${fmtDa(day.openingFund)} + espèces ${fmtDa(s.cashSales)} − sorties ${fmtDa(s.cashExpenses)}',
+                              style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 6),
                     Text(
                       seeMoney
@@ -435,8 +460,9 @@ class _ClosingScreenState extends State<ClosingScreen> {
                       KeyValueRow('Fond du matin', fmtDa(day.openingFund)),
                       KeyValueRow('Ventes en espèces', '+ ${fmtDa(s.cashSales)}', valueColor: AppColors.greenText),
                       KeyValueRow('Dépenses payées en caisse', '− ${fmtDa(s.cashExpenses)}', valueColor: AppColors.redText),
-                      KeyValueRow('Attendu', fmtDa(s.expectedInDrawer), bold: true),
-                      KeyValueRow('Compté', fmtDa(counted), bold: true),
+                      KeyValueRow('À trouver', fmtDa(s.expectedInDrawer), bold: true),
+                      KeyValueRow('Compté (fond compris)', fmtDa(counted), bold: true),
+                      KeyValueRow('Compté sans le fond', fmtDa(counted - day.openingFund)),
                       const SizedBox(height: 8),
                       Container(
                         padding: const EdgeInsets.all(12),
@@ -473,9 +499,36 @@ class _ClosingScreenState extends State<ClosingScreen> {
                             textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
                           ),
                           onPressed: () => _close(day, s),
-                          child: const Text('Clôturer et imprimer le Z'),
+                          child: const Text('Enregistrer la clôture'),
                         ),
                       ),
+                      const SizedBox(height: 14),
+                      Builder(builder: (_) {
+                        final f = DayRepo.suggestedFund();
+                        return Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(color: AppColors.fill, borderRadius: BorderRadius.circular(12)),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.wb_sunny_outlined),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Demain, ramenez ${fmtDa(f.suggested)} de fond',
+                                        style: const TextStyle(fontWeight: FontWeight.w700)),
+                                    Text(
+                                      'monnaie ${fmtDa(f.change)} + dépenses moyennes ${fmtDa(f.avgExpenses)} + 10 %',
+                                      style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
                     ],
                   ],
                 ),

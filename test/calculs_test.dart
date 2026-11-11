@@ -1,3 +1,4 @@
+import 'package:chicken_station/data/attendance.dart';
 import 'package:chicken_station/data/purchasing.dart';
 import 'package:chicken_station/ui/format.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -133,6 +134,49 @@ void main() {
 
     test('trop versé : reste négatif', () {
       expect(PayMonth(salary: 40000, advances: 25000, paid: 20000, bonus: 0).remaining, -5000);
+    });
+  });
+
+  group('Pointage et paie', () {
+    AttRecap recap({int openWhole = 26, int journee = 0, int demi = 0, int doubles = 0, int absent = 0, int salary = 39000}) => AttRecap(
+          openDays: openWhole,
+          openDaysWholeMonth: openWhole,
+          closedDays: 30 - openWhole,
+          journee: journee,
+          demi: demi,
+          doubles: doubles,
+          repos: 0,
+          absent: absent,
+          unmarked: 0,
+          salary: salary,
+        );
+
+    test('valeur d\'une journée = salaire ÷ jours d\'ouverture', () {
+      expect(recap().dayValue, 1500); // 39 000 ÷ 26
+    });
+
+    test('une demi-journée manquée = 0,5 jour retenu', () {
+      final r = recap(absent: 1, demi: 2);
+      expect(r.missedDays, 2.0);
+      expect(r.suggestedDeduction, 3000);
+    });
+
+    test('chaque double journée = une journée en prime', () {
+      expect(recap(doubles: 3).suggestedBonus, 4500);
+    });
+
+    test('jours travaillés : demi 0,5 et double 2', () {
+      expect(recap(journee: 20, demi: 2, doubles: 2).workedDays, 25.0);
+    });
+
+    test('mois sans jour d\'ouverture : pas de division par zéro', () {
+      expect(recap(openWhole: 0).dayValue, 0);
+    });
+
+    test('retenue et prime changent ce qui est dû', () {
+      final m = PayMonth(salary: 39000, advances: 10000, paid: 0, bonus: 4500, deduction: 3000);
+      expect(m.due, 40500);
+      expect(m.remaining, 30500);
     });
   });
 }

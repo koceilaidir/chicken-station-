@@ -10,6 +10,7 @@ import 'data/models.dart';
 import 'data/settings.dart';
 import 'hardware/hardware_config.dart';
 import 'hardware/hardware_service.dart';
+import 'screens/attendance_screen.dart';
 import 'screens/backup_screen.dart';
 import 'screens/closing_screen.dart';
 import 'screens/login_screen.dart';
@@ -133,11 +134,30 @@ class ChickenStationApp extends StatelessWidget {
       title: 'Chicken Station',
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
+      // Écran tactile : le clavier Windows ne doit s'ouvrir que quand on touche un champ.
+      navigatorObservers: [_NoKeyboardAfterDialog()],
+      builder: (context, child) => GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: _hideKeyboard,
+        child: child,
+      ),
       home: ListenableBuilder(
         listenable: Session.I,
         builder: (context, _) => Session.I.loggedIn ? const AppShell() : const LoginScreen(),
       ),
     );
+  }
+}
+
+/// Enlève le curseur du champ en cours : le clavier tactile de Windows se referme.
+void _hideKeyboard() => FocusManager.instance.primaryFocus?.unfocus();
+
+/// À la fermeture d'une fenêtre, Flutter remet le curseur dans le champ touché avant :
+/// sur écran tactile, ça rouvrait le clavier. On l'enlève.
+class _NoKeyboardAfterDialog extends NavigatorObserver {
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _hideKeyboard());
   }
 }
 
@@ -153,9 +173,10 @@ class _NavItem {
 
 final _items = <_NavItem>[
   _NavItem('Caisse', Icons.point_of_sale_outlined, [Perm.vendre], () => const PosScreen()),
-  _NavItem('Clôture', Icons.check_circle_outline, [Perm.cloture, Perm.recette, Perm.depense], () => const ClosingScreen()),
+  _NavItem('Caisse du jour', Icons.check_circle_outline, [Perm.cloture, Perm.recette, Perm.depense], () => const ClosingScreen()),
   _NavItem('Compta', Icons.bar_chart_outlined, [Perm.coffre], () => const ComptaScreen()),
   _NavItem('Dépenses', Icons.receipt_long_outlined, DepensesScreen.perms, () => const DepensesScreen()),
+  _NavItem('Pointage', Icons.how_to_reg_outlined, AttendanceScreen.perms, () => const AttendanceScreen()),
   _NavItem('Menu', Icons.restaurant_menu, [Perm.menu], () => const MenuAdminScreen()),
   _NavItem('Réglages', Icons.settings_outlined, SettingsScreen.perms, () => const SettingsScreen()),
 ];
@@ -233,7 +254,10 @@ class _AppShellState extends State<AppShell> {
       child: Scaffold(
       body: Row(
         children: [
-          _Sidebar(items: items, selected: _selected, onSelect: (i) => setState(() => _selected = i)),
+          _Sidebar(items: items, selected: _selected, onSelect: (i) {
+            _hideKeyboard();
+            setState(() => _selected = i);
+          }),
           const VerticalDivider(width: 1, thickness: 1, color: AppColors.separator),
           Expanded(
             child: Stack(
@@ -310,7 +334,7 @@ class _Sidebar extends StatelessWidget {
                       onTap: () => onSelect(i),
                       child: SizedBox(
                         width: 76,
-                        height: 56,
+                        height: 60,
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
@@ -318,9 +342,10 @@ class _Sidebar extends StatelessWidget {
                             const SizedBox(height: 3),
                             Text(
                               item.label,
-                              maxLines: 1,
+                              maxLines: 2,
+                              textAlign: TextAlign.center,
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 11, fontWeight: active ? FontWeight.w700 : FontWeight.w600, color: color),
+                              style: TextStyle(fontSize: 11, height: 1.1, fontWeight: active ? FontWeight.w700 : FontWeight.w600, color: color),
                             ),
                           ],
                         ),

@@ -237,14 +237,20 @@ class Employee {
 
 /// Situation d'un employé pour un mois.
 class PayMonth {
-  PayMonth({required this.salary, required this.advances, required this.paid, required this.bonus});
+  PayMonth({required this.salary, required this.advances, required this.paid, required this.bonus, this.deduction = 0});
   final int salary;
   final int advances;
   final int paid;
   final int bonus;
 
-  /// Reste à payer = salaire + primes − acomptes − déjà payé.
-  int get remaining => salary + bonus - advances - paid;
+  /// Retenues (absences) : diminuent ce qui est dû, sans mouvement d'argent.
+  final int deduction;
+
+  /// Ce que l'employé coûte ce mois : salaire + primes − retenues.
+  int get due => salary + bonus - deduction;
+
+  /// Reste à payer = salaire + primes − retenues − acomptes − déjà payé.
+  int get remaining => due - advances - paid;
 }
 
 class PayLine {
@@ -256,6 +262,7 @@ class PayLine {
     required this.note,
     required this.source,
     required this.cancelled,
+    this.origin = '',
   });
   final int id;
   final DateTime at;
@@ -265,7 +272,13 @@ class PayLine {
   final String source;
   final bool cancelled;
 
-  static const kindLabels = {'acompte': 'Acompte', 'salaire': 'Salaire', 'prime': 'Prime'};
+  /// 'pointage' quand la ligne a été calculée depuis le pointage (doubles journées, absences).
+  final String origin;
+
+  static const kindLabels = {'acompte': 'Acompte', 'salaire': 'Salaire', 'prime': 'Prime', 'retenue': 'Retenue'};
+
+  /// Lignes sans mouvement d'argent (elles changent seulement ce qui est dû).
+  static const noMoney = {'prime', 'retenue'};
 }
 
 class PayrollRepo {
@@ -347,6 +360,7 @@ class PayrollRepo {
       advances: sum('acompte'),
       paid: sum('salaire'),
       bonus: sum('prime'),
+      deduction: sum('retenue'),
     );
   }
 
@@ -384,6 +398,7 @@ class PayrollRepo {
             note: (r['note'] as String?) ?? '',
             source: (r['source'] as String?) ?? '',
             cancelled: (r['cancelled'] as int) == 1,
+            origin: (r['origin'] as String?) ?? '',
           ))
       .toList();
 
@@ -397,9 +412,10 @@ class PayrollRepo {
     required String month,
     String source = 'coffre',
     String note = '',
+    String origin = '',
   }) {
     int? expenseId;
-    if (kind != 'prime') {
+    if (!PayLine.noMoney.contains(kind)) {
       expenseId = _payOut(
         userId: userId,
         label: '${PayLine.kindLabels[kind]} : ${employee.name} ($month)',
@@ -409,11 +425,13 @@ class PayrollRepo {
       );
     }
     _db.execute(
-      'INSERT INTO pay_moves (created_at, user_id, employee_id, month, kind, amount, expense_id, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [nowIso(), userId, employee.id, month, kind, amount, expenseId, note],
+      'INSERT INTO pay_moves (created_at, user_id, employee_id, month, kind, amount, expense_id, note, origin) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [nowIso(), userId, employee.id, month, kind, amount, expenseId, note, origin],
     );
     AppDb.I.audit(userId, 'paie',
-        '${PayLine.kindLabels[kind]} · ${employee.name} · ${fmtDa(amount)} · mois $month${kind == 'prime' ? '' : ' · ${source == 'coffre' ? 'du coffre' : 'de la caisse'}'}');
+        '${PayLine.kindLabels[kind]} · ${employee.name} · ${fmtDa(amount)} · mois $month'
+        '${PayLine.noMoney.contains(kind) ? '' : ' · ${source == 'coffre' ? 'du coffre' : 'de la caisse'}'}'
+        '${note.isEmpty ? '' : ' · $note'}');
   }
 
   /// Annule une ligne de paie saisie par erreur (l'argent revient là d'où il est sorti).
@@ -425,13 +443,46 @@ class PayrollRepo {
       ExpenseRepo.cancel(expenseId, userId, reason);
     } else {
       _db.execute('UPDATE pay_moves SET cancelled = 1 WHERE id = ?', [lineId]);
-      AppDb.I.audit(userId, 'paie', 'Prime annulée · ${fmtDa(r.first['amount'] as int)} · motif : $reason');
+      AppDb.I.audit(userId, 'paie',
+          '${PayLine.kindLabels[r.first['kind']] ?? r.first['kind']} annulée · ${fmtDa(r.first['amount'] as int)} · motif : $reason');
     }
   }
 
   /// Masse salariale d'un mois : salaire de l'époque de chaque employé présent ce mois-là.
   static int totalSalaries(String month) =>
       employees().where((e) => e.worksIn(month)).fold<int>(0, (a, e) => a + salaryFor(e.id, month));
+
+  /// Coût réel des employés pour un mois : salaires + primes − retenues (pour le résultat du mois).
+  static int totalCost(String month) => employees().fold<int>(0, (a, e) => a + PayrollRepo.month(e, month).due);
+
+  /// Somme des lignes actives d'un type venant du pointage, pour un employé et un mois.
+  static int fromAttendance(int employeeId, String month, String kind) => _db.select(
+        "SELECT COALESCE(SUM(amount), 0) AS t FROM pay_moves WHERE employee_id = ? AND month = ? AND kind = ? AND origin = 'pointage' AND cancelled = 0",
+        [employeeId, month, kind],
+      ).first['t'] as int;
+
+  /// Met la prime (doubles journées) ou la retenue (absences) du mois au montant [amount] calculé depuis le pointage.
+  /// L'ancienne ligne venant du pointage est annulée (tracée) et remplacée : jamais de double comptage.
+  static void setFromAttendance({
+    required int userId,
+    required Employee employee,
+    required String month,
+    required String kind,
+    required int amount,
+    required String note,
+  }) {
+    assert(kind == 'prime' || kind == 'retenue');
+    final old = _db.select(
+      "SELECT id FROM pay_moves WHERE employee_id = ? AND month = ? AND kind = ? AND origin = 'pointage' AND cancelled = 0",
+      [employee.id, month, kind],
+    );
+    for (final r in old) {
+      cancelLine(r['id'] as int, userId, 'recalcul depuis le pointage');
+    }
+    if (amount > 0) {
+      record(userId: userId, employee: employee, kind: kind, amount: amount, month: month, note: note, origin: 'pointage');
+    }
+  }
 
   /// Total restant à payer pour un mois, tous employés.
   static int totalRemaining(String month) => employees()
@@ -617,7 +668,7 @@ class ChargesRepo {
       sales: sales,
       goodsCost: purchases + goodsExpenses,
       charges: paidBetween(start, end),
-      salaries: PayrollRepo.totalSalaries(monthKey(start)),
+      salaries: PayrollRepo.totalCost(monthKey(start)),
       otherExpenses: other,
       daysLeft: daysLeft,
       daysElapsed: elapsed,

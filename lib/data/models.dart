@@ -11,6 +11,7 @@ class Perm {
   static const depense = 'depense';
   static const fournisseurs = 'fournisseurs';
   static const paie = 'paie';
+  static const pointage = 'pointage';
   static const stock = 'stock';
   static const reception = 'reception';
   static const inventaire = 'inventaire';
@@ -22,7 +23,7 @@ class Perm {
 
   static const all = [
     vendre, annuler, tiroir, recette, cloture, coffre, depense,
-    fournisseurs, paie, stock, reception, inventaire, menu, users, materiel,
+    fournisseurs, paie, pointage, stock, reception, inventaire, menu, users, materiel,
     sauvegarde, activite,
   ];
 
@@ -36,6 +37,7 @@ class Perm {
     depense: 'Enregistrer une dépense',
     fournisseurs: 'Payer les fournisseurs',
     paie: 'Salaires et acomptes',
+    pointage: 'Pointer les employés',
     stock: "Voir les achats",
     reception: "Saisir les bons d'achat",
     inventaire: "Faire l'inventaire",
@@ -49,13 +51,13 @@ class Perm {
   static const groups = <String, List<String>>{
     'Caisse': [vendre, annuler, tiroir],
     'Argent': [recette, cloture, coffre, depense],
-    'Achats et paie': [stock, reception, fournisseurs, paie],
+    'Achats et paie': [stock, reception, fournisseurs, paie, pointage],
     'Administration': [menu, materiel, sauvegarde, activite],
   };
 
   static const presets = <String, List<String>>{
     'caissier': [vendre],
-    'gerant': [vendre, annuler, tiroir, recette, cloture, depense, fournisseurs, stock, reception, inventaire],
+    'gerant': [vendre, annuler, tiroir, recette, cloture, depense, fournisseurs, stock, reception, inventaire, pointage],
     'admin': all,
   };
 

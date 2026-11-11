@@ -247,6 +247,29 @@ class AppDb {
       db.execute('ALTER TABLE purchases ADD COLUMN opening INTEGER NOT NULL DEFAULT 0;');
       db.userVersion = 9;
     }
+    if (db.userVersion < 10) {
+      // Pointage des employés, jours de fermeture, retenues et primes calculées depuis le pointage.
+      db.execute('''
+        CREATE TABLE IF NOT EXISTS attendance (
+          employee_id INTEGER NOT NULL,
+          day TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          user_id INTEGER,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (employee_id, day)
+        );
+        CREATE TABLE IF NOT EXISTS closed_days (
+          day TEXT PRIMARY KEY,
+          reason TEXT NOT NULL DEFAULT '',
+          user_id INTEGER,
+          created_at TEXT NOT NULL
+        );
+      ''');
+      db.execute("ALTER TABLE pay_moves ADD COLUMN origin TEXT NOT NULL DEFAULT '';");
+      // Le gérant pointe les employés.
+      db.execute("UPDATE users SET perms = perms || ',pointage' WHERE role = 'gerant' AND perms NOT LIKE '%pointage%';");
+      db.userVersion = 10;
+    }
   }
 
   void _createV1() {
@@ -476,7 +499,7 @@ class AppDb {
     const tables = [
       'sale_lines', 'sales', 'expenses', 'safe_moves', 'days',
       'purchase_lines', 'purchases', 'supplier_payments', 'suppliers',
-      'pay_moves', 'employee_salaries', 'employees', 'stock_moves', 'audit',
+      'pay_moves', 'employee_salaries', 'employees', 'stock_moves', 'attendance', 'closed_days', 'audit',
     ];
     db.execute('BEGIN');
     try {

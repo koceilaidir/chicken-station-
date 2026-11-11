@@ -112,7 +112,11 @@ class SerialPortWin {
         if (err == _errorFileNotFound) {
           throw HardwareException("$name n'existe pas sur ce PC. Choisissez un autre port.");
         }
-        throw HardwareException("Impossible d'ouvrir $name (code $err).");
+        // Windows ne donne pas toujours la raison (code 0) : port absent ou déjà pris.
+        throw HardwareException(
+          "Impossible d'ouvrir $name : ce port n'existe pas ou il est déjà pris. "
+          "Essayez un autre port de la liste${err == 0 ? '' : ' (code $err)'}.",
+        );
       }
       try {
         dcb.ref.dcbLength = sizeOf<_Dcb>();
