@@ -1,0 +1,564 @@
+{
+  "schema": "chicken-station-seed",
+  "version": 2,
+  "currency": "DZD",
+  "note": "Base de première installation. Prix en dinars entiers ; rank = ordre en caisse (1 = en premier). Photos 800 px.",
+  "families": [
+    {
+      "id": "burgers",
+      "name": "Burgers",
+      "rank": 1,
+      "photo": "photos/menu/burgers/cheeseburger.jpg",
+      "active": true,
+      "products": [
+        {
+          "id": "burgers-01",
+          "name": "Cheeseburger",
+          "price_da": 400,
+          "rank": 1,
+          "description": "Fromage à tartiner, salade, tomate, steak. Gouda + mozzarella ou slice.",
+          "photo": "photos/menu/burgers/cheeseburger.jpg",
+          "active": true
+        },
+        {
+          "id": "burgers-02",
+          "name": "Double Cheeseburger",
+          "price_da": 600,
+          "rank": 2,
+          "description": "Fromage à tartiner, salade, tomate, double steak. Gouda + mozzarella ou slice.",
+          "photo": "photos/menu/burgers/double-cheeseburger.jpg",
+          "active": true
+        },
+        {
+          "id": "burgers-03",
+          "name": "Le Crusty Chicken Burger",
+          "price_da": 400,
+          "rank": 3,
+          "description": "Fromage à tartiner, salade, poulet crispy. Gouda + mozzarella ou slice.",
+          "photo": "photos/menu/burgers/crusty-chicken-burger.jpg",
+          "active": true
+        },
+        {
+          "id": "burgers-04",
+          "name": "Le Big Challenge",
+          "price_da": 650,
+          "rank": 4,
+          "description": "Fromage à tartiner, salade, tomate, double steak, viande hachée et poulet crispy. Gouda + mozzarella ou slice.",
+          "photo": "photos/menu/burgers/big-challenge.jpg",
+          "active": true
+        },
+        {
+          "id": "burgers-05",
+          "name": "Le Double Mix",
+          "price_da": 600,
+          "rank": 5,
+          "description": "Fromage à tartiner, salade, tomate, double steak et poulet crispy. Gouda + mozzarella ou slice.",
+          "photo": "photos/menu/burgers/double-mix.jpg",
+          "active": true
+        },
+        {
+          "id": "burgers-06",
+          "name": "Combo Beny",
+          "price_da": 650,
+          "rank": 6,
+          "description": "Fromage à tartiner, salade, tomate, double steak et œuf.",
+          "photo": "photos/menu/burgers/combo-beny.jpg",
+          "active": true
+        }
+      ]
+    },
+    {
+      "id": "tacos",
+      "name": "Tacos",
+      "rank": 2,
+      "photo": "photos/menu/tacos/poulet-marine.jpg",
+      "active": true,
+      "products": [
+        {
+          "id": "tacos-01",
+          "name": "Tacos Poulet mariné",
+          "price_da": 500,
+          "rank": 1,
+          "description": "Fromage à tartiner, poulet mariné, frites, sauce fromagère et sauce maison.",
+          "photo": "photos/menu/tacos/poulet-marine.jpg",
+          "active": true
+        },
+        {
+          "id": "tacos-02",
+          "name": "Tacos Viande hachée",
+          "price_da": 550,
+          "rank": 2,
+          "description": "Fromage à tartiner, viande hachée, frites, sauce fromagère et sauce maison.",
+          "photo": "photos/menu/tacos/viande-hachee.jpg",
+          "active": true
+        },
+        {
+          "id": "tacos-03",
+          "name": "Tacos Crispy",
+          "price_da": 500,
+          "rank": 3,
+          "description": "Fromage à tartiner, poulet crispy, frites, sauce fromagère et sauce maison.",
+          "photo": "photos/menu/tacos/crispy.jpg",
+          "active": true
+        },
+        {
+          "id": "tacos-04",
+          "name": "Tacos Poulet mariné gratiné",
+          "price_da": 600,
+          "rank": 4,
+          "description": "Tacos poulet mariné avec option gratinée (+100 DA).",
+          "photo": "photos/menu/tacos/poulet-marine-gratine.jpg",
+          "active": true
+        },
+        {
+          "id": "tacos-05",
+          "name": "Tacos Viande hachée gratiné",
+          "price_da": 650,
+          "rank": 5,
+          "description": "Tacos viande hachée avec option gratinée (+100 DA).",
+          "photo": "photos/menu/tacos/viande-hachee-gratine.jpg",
+          "active": true
+        },
+        {
+          "id": "tacos-06",
+          "name": "Tacos Crispy gratiné",
+          "price_da": 600,
+          "rank": 6,
+          "description": "Tacos crispy avec option gratinée (+100 DA).",
+          "photo": "photos/menu/tacos/crispy-gratine.jpg",
+          "active": true
+        }
+      ]
+    },
+    {
+      "id": "fajitas",
+      "name": "Fajitas",
+      "rank": 3,
+      "photo": "photos/menu/fajitas/poulet-marine.jpg",
+      "active": true,
+      "products": [
+        {
+          "id": "fajitas-01",
+          "name": "Fajitas Poulet mariné",
+          "price_da": 450,
+          "rank": 1,
+          "description": "Fromage fondu, poulet mariné, poivrons, oignons caramélisés, sauce fromagère et sauce maison.",
+          "photo": "photos/menu/fajitas/poulet-marine.jpg",
+          "active": true
+        },
+        {
+          "id": "fajitas-02",
+          "name": "Fajitas Viande hachée",
+          "price_da": 500,
+          "rank": 2,
+          "description": "Fromage fondu, viande hachée, poivrons, oignons caramélisés, sauce fromagère et sauce maison.",
+          "photo": "photos/menu/fajitas/viande-hachee.jpg",
+          "active": true
+        },
+        {
+          "id": "fajitas-03",
+          "name": "Fajitas Crispy",
+          "price_da": 450,
+          "rank": 3,
+          "description": "Fromage fondu, poulet crispy, poivrons, oignons caramélisés, sauce fromagère et sauce maison.",
+          "photo": "photos/menu/fajitas/crispy.jpg",
+          "active": true
+        }
+      ]
+    },
+    {
+      "id": "box",
+      "name": "Box",
+      "rank": 4,
+      "photo": "photos/menu/box/chicken-box.jpg",
+      "active": true,
+      "products": [
+        {
+          "id": "box-01",
+          "name": "Chicken Box",
+          "price_da": 700,
+          "rank": 1,
+          "description": "Crusty Chicken Burger, frites et 2 tenders.",
+          "photo": "photos/menu/box/chicken-box.jpg",
+          "active": true
+        },
+        {
+          "id": "box-02",
+          "name": "Box Beny",
+          "price_da": 650,
+          "rank": 2,
+          "description": "Crusty Chicken Burger, frites et 2 wings.",
+          "photo": "photos/menu/box/box-beny.jpg",
+          "active": true
+        },
+        {
+          "id": "box-03",
+          "name": "Box Mix",
+          "price_da": 800,
+          "rank": 3,
+          "description": "Crusty Chicken Burger, frites, 2 tenders et 2 wings.",
+          "photo": "photos/menu/box/box-mix.jpg",
+          "active": true
+        },
+        {
+          "id": "box-04",
+          "name": "Box Twister",
+          "price_da": 750,
+          "rank": 4,
+          "description": "Galette au choix, frites et 3 wings.",
+          "photo": "photos/menu/box/box-twister.jpg",
+          "active": true
+        }
+      ]
+    },
+    {
+      "id": "galettes",
+      "name": "Galettes",
+      "rank": 5,
+      "photo": "photos/menu/galettes/poulet-marine.jpg",
+      "active": true,
+      "products": [
+        {
+          "id": "galettes-01",
+          "name": "Galette Poulet mariné",
+          "price_da": 350,
+          "rank": 1,
+          "description": "Salade, tomate, fromage, poulet mariné, sauce maison et sauce fromagère.",
+          "photo": "photos/menu/galettes/poulet-marine.jpg",
+          "active": true
+        },
+        {
+          "id": "galettes-02",
+          "name": "Galette Viande hachée",
+          "price_da": 350,
+          "rank": 2,
+          "description": "Salade, tomate, fromage, viande hachée, sauce maison et sauce fromagère.",
+          "photo": "photos/menu/galettes/viande-hachee.jpg",
+          "active": true
+        },
+        {
+          "id": "galettes-03",
+          "name": "Galette Crispy",
+          "price_da": 350,
+          "rank": 3,
+          "description": "Salade, tomate, fromage, poulet crispy, sauce maison et sauce fromagère.",
+          "photo": "photos/menu/galettes/crispy.jpg",
+          "active": true
+        }
+      ]
+    },
+    {
+      "id": "bowls",
+      "name": "Bowls",
+      "rank": 6,
+      "photo": "photos/menu/bowls/chicken-riz-poulet-marine.jpg",
+      "active": true,
+      "products": [
+        {
+          "id": "bowls-01",
+          "name": "Chicken Riz Poulet mariné",
+          "price_da": 600,
+          "rank": 1,
+          "description": "Riz, sauce fromagère, gouda, mozzarella et poulet mariné.",
+          "photo": "photos/menu/bowls/chicken-riz-poulet-marine.jpg",
+          "active": true
+        },
+        {
+          "id": "bowls-02",
+          "name": "Chicken Riz Crispy",
+          "price_da": 600,
+          "rank": 2,
+          "description": "Riz, sauce fromagère, gouda, mozzarella et poulet crispy.",
+          "photo": "photos/menu/bowls/chicken-riz-crispy.jpg",
+          "active": true
+        },
+        {
+          "id": "bowls-03",
+          "name": "Chicken Riz Viande hachée",
+          "price_da": 600,
+          "rank": 3,
+          "description": "Riz, sauce fromagère, gouda, mozzarella et viande hachée.",
+          "photo": "photos/menu/bowls/chicken-riz-viande-hachee.jpg",
+          "active": true
+        },
+        {
+          "id": "bowls-04",
+          "name": "Steak Cheese",
+          "price_da": 600,
+          "rank": 4,
+          "description": "Frites, sauce fromagère, gouda, mozzarella et viande hachée.",
+          "photo": "photos/menu/bowls/steak-cheese.jpg",
+          "active": true
+        },
+        {
+          "id": "bowls-05",
+          "name": "Crusty Bowl",
+          "price_da": 550,
+          "rank": 5,
+          "description": "Frites, sauce fromagère, gouda, mozzarella et 3 morceaux de poulet crispy.",
+          "photo": "photos/menu/bowls/crusty-bowl.jpg",
+          "active": true
+        }
+      ]
+    },
+    {
+      "id": "buffalo",
+      "name": "Buffalo",
+      "rank": 7,
+      "photo": "photos/menu/buffalo/poulet-marine.jpg",
+      "active": true,
+      "products": [
+        {
+          "id": "buffalo-01",
+          "name": "Buffalo Poulet mariné",
+          "price_da": 400,
+          "rank": 1,
+          "description": "Sandwich sans garniture.",
+          "photo": "photos/menu/buffalo/poulet-marine.jpg",
+          "active": true
+        },
+        {
+          "id": "buffalo-02",
+          "name": "Buffalo Viande hachée",
+          "price_da": 400,
+          "rank": 2,
+          "description": "Sandwich sans garniture.",
+          "photo": "photos/menu/buffalo/viande-hachee.jpg",
+          "active": true
+        },
+        {
+          "id": "buffalo-03",
+          "name": "Buffalo Poulet crispy",
+          "price_da": 400,
+          "rank": 3,
+          "description": "Sandwich sans garniture.",
+          "photo": "photos/menu/buffalo/crispy.jpg",
+          "active": true
+        }
+      ]
+    },
+    {
+      "id": "salades",
+      "name": "Salades",
+      "rank": 8,
+      "photo": "photos/menu/salades/salade-cesar.jpg",
+      "active": true,
+      "products": [
+        {
+          "id": "salades-01",
+          "name": "Salade César",
+          "price_da": 500,
+          "rank": 1,
+          "description": "Salade, tomate, poulet crispy, sauce et pain de mie.",
+          "photo": "photos/menu/salades/salade-cesar.jpg",
+          "active": true
+        },
+        {
+          "id": "salades-02",
+          "name": "Salade simple",
+          "price_da": 300,
+          "rank": 2,
+          "description": "Salade, tomate et sauce.",
+          "photo": "photos/menu/salades/salade-simple.jpg",
+          "active": true
+        }
+      ]
+    },
+    {
+      "id": "supplements",
+      "name": "Suppléments",
+      "rank": 9,
+      "photo": "photos/menu/supplements/barquette-frites.jpg",
+      "active": true,
+      "products": [
+        {
+          "id": "supplements-01",
+          "name": "Barquette de frites",
+          "price_da": 150,
+          "rank": 1,
+          "description": "",
+          "photo": "photos/menu/supplements/barquette-frites.jpg",
+          "active": true
+        },
+        {
+          "id": "supplements-02",
+          "name": "Gruyère",
+          "price_da": 100,
+          "rank": 2,
+          "description": "",
+          "photo": "photos/menu/supplements/gruyere.jpg",
+          "active": true
+        },
+        {
+          "id": "supplements-03",
+          "name": "Camembert",
+          "price_da": 100,
+          "rank": 3,
+          "description": "",
+          "photo": "photos/menu/supplements/camembert.jpg",
+          "active": true
+        }
+      ]
+    },
+    {
+      "id": "boissons",
+      "name": "Boissons",
+      "rank": 10,
+      "photo": null,
+      "active": true,
+      "products": []
+    }
+  ],
+  "ingredients": [
+    {
+      "id": "pain-burger",
+      "name": "Pain burger",
+      "unit": "pièce",
+      "photo": "photos/ingredients/pain-burger.jpg"
+    },
+    {
+      "id": "pain-buffalo",
+      "name": "Pain buffalo",
+      "unit": "pièce",
+      "photo": "photos/ingredients/pain-buffalo.jpg"
+    },
+    {
+      "id": "pain-de-mie",
+      "name": "Pain de mie",
+      "unit": "tranche",
+      "photo": "photos/ingredients/pain-de-mie.jpg"
+    },
+    {
+      "id": "galette-tortilla",
+      "name": "Galette tortilla",
+      "unit": "pièce",
+      "photo": "photos/ingredients/galette-tortilla.jpg"
+    },
+    {
+      "id": "steak-hache",
+      "name": "Steak haché",
+      "unit": "pièce",
+      "photo": "photos/ingredients/steak-hache.jpg"
+    },
+    {
+      "id": "viande-hachee",
+      "name": "Viande hachée",
+      "unit": "kg",
+      "photo": "photos/ingredients/viande-hachee.jpg"
+    },
+    {
+      "id": "poulet-marine",
+      "name": "Poulet mariné",
+      "unit": "kg",
+      "photo": "photos/ingredients/poulet-marine.jpg"
+    },
+    {
+      "id": "poulet-crispy",
+      "name": "Poulet crispy",
+      "unit": "kg",
+      "photo": "photos/ingredients/poulet-crispy.jpg"
+    },
+    {
+      "id": "tenders",
+      "name": "Tenders",
+      "unit": "pièce",
+      "photo": "photos/ingredients/tenders.jpg"
+    },
+    {
+      "id": "wings",
+      "name": "Wings",
+      "unit": "pièce",
+      "photo": "photos/ingredients/wings.jpg"
+    },
+    {
+      "id": "oeufs",
+      "name": "Œufs",
+      "unit": "pièce",
+      "photo": "photos/ingredients/oeufs.jpg"
+    },
+    {
+      "id": "frites",
+      "name": "Frites",
+      "unit": "kg",
+      "photo": "photos/ingredients/frites.jpg"
+    },
+    {
+      "id": "riz",
+      "name": "Riz",
+      "unit": "kg",
+      "photo": "photos/ingredients/riz.jpg"
+    },
+    {
+      "id": "fromage-a-tartiner",
+      "name": "Fromage à tartiner",
+      "unit": "kg",
+      "photo": "photos/ingredients/fromage-a-tartiner.jpg"
+    },
+    {
+      "id": "fromage-fondu",
+      "name": "Fromage fondu",
+      "unit": "kg",
+      "photo": "photos/ingredients/fromage-fondu.jpg"
+    },
+    {
+      "id": "fromage-slice",
+      "name": "Fromage slice",
+      "unit": "tranche",
+      "photo": "photos/ingredients/fromage-slice.jpg"
+    },
+    {
+      "id": "gouda",
+      "name": "Gouda",
+      "unit": "tranche",
+      "photo": "photos/ingredients/gouda.jpg"
+    },
+    {
+      "id": "mozzarella",
+      "name": "Mozzarella",
+      "unit": "kg",
+      "photo": "photos/ingredients/mozzarella.jpg"
+    },
+    {
+      "id": "gruyere",
+      "name": "Gruyère",
+      "unit": "kg",
+      "photo": "photos/ingredients/gruyere.jpg"
+    },
+    {
+      "id": "camembert",
+      "name": "Camembert",
+      "unit": "portion",
+      "photo": "photos/ingredients/camembert.jpg"
+    },
+    {
+      "id": "salade",
+      "name": "Salade",
+      "unit": "kg",
+      "photo": "photos/ingredients/salade.jpg"
+    },
+    {
+      "id": "tomates",
+      "name": "Tomates",
+      "unit": "kg",
+      "photo": "photos/ingredients/tomates.jpg"
+    },
+    {
+      "id": "poivrons",
+      "name": "Poivrons",
+      "unit": "kg",
+      "photo": "photos/ingredients/poivrons.jpg"
+    },
+    {
+      "id": "sauce-fromagere",
+      "name": "Sauce fromagère",
+      "unit": "L",
+      "photo": "photos/ingredients/sauce-fromagere.jpg"
+    },
+    {
+      "id": "sauce-maison",
+      "name": "Sauce maison",
+      "unit": "L",
+      "photo": "photos/ingredients/sauce-maison.jpg"
+    }
+  ]
+}
