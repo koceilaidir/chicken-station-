@@ -107,7 +107,7 @@ class AppUser {
 }
 
 class Family {
-  Family({required this.id, required this.name, required this.rank, this.photo, required this.active});
+  Family({required this.id, required this.name, required this.rank, this.photo, required this.active, this.kitchen = true});
 
   final int id;
   String name;
@@ -115,12 +115,16 @@ class Family {
   String? photo;
   bool active;
 
+  /// Les produits de cette famille partent sur le bon cuisine (non pour les boissons).
+  bool kitchen;
+
   factory Family.fromRow(Row r) => Family(
         id: r['id'] as int,
         name: r['name'] as String,
         rank: r['rank'] as int,
         photo: r['photo'] as String?,
         active: (r['active'] as int) == 1,
+        kitchen: ((r['kitchen'] as int?) ?? 1) == 1,
       );
 }
 

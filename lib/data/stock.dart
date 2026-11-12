@@ -85,6 +85,22 @@ class StockRepo {
     return r.isEmpty ? null : Ingredient.fromRow(r.first);
   }
 
+  /// Article tapé à la main sur un bon : retrouvé par son nom et son unité, ou créé.
+  static Ingredient articleNamed(int? userId, String name, String unit) {
+    final r = _db.select(
+      'SELECT * FROM ingredients WHERE name = ? COLLATE NOCASE AND unit = ? ORDER BY active DESC LIMIT 1',
+      [name.trim(), unit],
+    );
+    if (r.isNotEmpty) return Ingredient.fromRow(r.first);
+    return byId(addIngredient(userId, name.trim(), unit))!;
+  }
+
+  /// Dernier prix payé pour un article tapé à la main (0 si jamais acheté).
+  static int lastPrice(String name, String unit) {
+    final r = _db.select('SELECT cost FROM ingredients WHERE name = ? COLLATE NOCASE AND unit = ? LIMIT 1', [name.trim(), unit]);
+    return r.isEmpty ? 0 : r.first['cost'] as int;
+  }
+
   static int addIngredient(int? userId, String name, String unit, {String? photo}) {
     _db.execute(
       'INSERT INTO ingredients (name, unit, photo, stock, min_stock, cost, active) VALUES (?, ?, ?, 0, 0, 0, 1)',

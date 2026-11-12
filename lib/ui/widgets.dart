@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../data/db.dart';
 import 'theme.dart';
+import 'touch_keyboard.dart';
 
 /// Logo Chicken Station (ailes).
 class AppLogo extends StatelessWidget {
@@ -72,6 +73,8 @@ class FieldBox extends StatelessWidget {
     this.big = false,
     this.obscure = false,
     this.onSubmitted,
+    this.decimal = false,
+    this.fill,
   });
 
   final TextEditingController controller;
@@ -83,16 +86,36 @@ class FieldBox extends StatelessWidget {
   final bool big;
   final bool obscure;
 
+  /// Nombre à virgule (quantité, kilos) : chiffres et virgule.
+  final bool decimal;
+  final Color? fill;
+
   @override
   Widget build(BuildContext context) {
+    final touch = TouchKeyboard.enabled;
     return TextField(
       controller: controller,
       onChanged: onChanged,
       onSubmitted: onSubmitted,
-      autofocus: autofocus,
+      // Clavier intégré : le champ ne demande rien à Windows, on ouvre notre clavier.
+      readOnly: touch,
+      showCursor: true,
+      autofocus: autofocus && !touch,
+      onTap: touch
+          ? () => TouchKeyboard.open(controller,
+              numeric: numeric || decimal,
+              decimal: decimal,
+              onChanged: onChanged,
+              onSubmitted: onSubmitted,
+              field: context)
+          : null,
       obscureText: obscure,
-      keyboardType: numeric ? TextInputType.number : TextInputType.text,
-      inputFormatters: numeric ? [FilteringTextInputFormatter.allow(RegExp(r'[0-9 ]'))] : null,
+      keyboardType: decimal
+          ? const TextInputType.numberWithOptions(decimal: true)
+          : (numeric ? TextInputType.number : TextInputType.text),
+      inputFormatters: decimal
+          ? [FilteringTextInputFormatter.allow(RegExp(r'[0-9 ,.]'))]
+          : (numeric ? [FilteringTextInputFormatter.allow(RegExp(r'[0-9 ]'))] : null),
       style: TextStyle(fontSize: big ? 26 : 15, fontWeight: big ? FontWeight.w800 : FontWeight.w600),
       decoration: InputDecoration(
         hintText: hint,
@@ -102,7 +125,7 @@ class FieldBox extends StatelessWidget {
           color: const Color(0xFFAEAEB2),
         ),
         filled: true,
-        fillColor: AppColors.fill,
+        fillColor: fill ?? AppColors.fill,
         isDense: true,
         contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: big ? 16 : 12),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
@@ -242,7 +265,7 @@ void toast(BuildContext context, String message, {bool error = false}) {
 Future<bool> confirm(BuildContext context, String title, String message, {String ok = 'Confirmer'}) async {
   final r = await showDialog<bool>(
     context: context,
-    builder: (c) => AlertDialog(
+    builder: (c) => AlertDialog(scrollable: true, 
       title: Text(title),
       content: Text(message),
       actions: [
@@ -259,7 +282,7 @@ Future<String?> askText(BuildContext context, String title, {String hint = '', S
   final ctrl = TextEditingController(text: initial);
   return showDialog<String>(
     context: context,
-    builder: (c) => AlertDialog(
+    builder: (c) => AlertDialog(scrollable: true, 
       title: Text(title),
       content: SizedBox(
         width: 380,

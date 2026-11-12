@@ -270,6 +270,19 @@ class AppDb {
       db.execute("UPDATE users SET perms = perms || ',pointage' WHERE role = 'gerant' AND perms NOT LIKE '%pointage%';");
       db.userVersion = 10;
     }
+    if (db.userVersion < 11) {
+      // Ce que livre d'habitude chaque fournisseur ; prix d'une journée de chaque employé.
+      db.execute("ALTER TABLE suppliers ADD COLUMN product TEXT NOT NULL DEFAULT '';");
+      db.execute('ALTER TABLE employees ADD COLUMN day_rate INTEGER NOT NULL DEFAULT 0;');
+      db.execute('UPDATE employees SET day_rate = CAST(ROUND(salary / 30.0) AS INTEGER) WHERE day_rate = 0;');
+      db.userVersion = 11;
+    }
+    if (db.userVersion < 12) {
+      // Familles envoyées en cuisine : les boissons ne passent pas par la cuisine.
+      db.execute('ALTER TABLE families ADD COLUMN kitchen INTEGER NOT NULL DEFAULT 1;');
+      db.execute("UPDATE families SET kitchen = 0 WHERE lower(name) LIKE '%boisson%';");
+      db.userVersion = 12;
+    }
   }
 
   void _createV1() {

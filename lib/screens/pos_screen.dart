@@ -6,6 +6,7 @@ import '../data/repos.dart';
 import '../hardware/hardware_service.dart';
 import '../hardware/tickets.dart';
 import '../state/session.dart';
+import '../ui/touch_keyboard.dart';
 import '../ui/format.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
@@ -36,6 +37,21 @@ class _PosScreenState extends State<PosScreen> {
   static const _modes = ['Sur place', 'À emporter', 'Livraison'];
 
   HardwareService get _hw => HardwareService.I;
+
+
+  /// Bon cuisine avec seulement les produits à préparer. Commande sans rien à cuisiner (boissons) : pas de bon.
+  Future<void> _kitchen({
+    required int number,
+    required String mode,
+    required String cashier,
+    required List<CartLine> lines,
+    String? banner,
+  }) async {
+    final cook = MenuRepo.kitchenFamilies();
+    final toCook = lines.where((l) => cook.contains(l.product.familyId)).toList();
+    if (toCook.isEmpty) return;
+    await _hw.printKitchen(Tickets.kitchen(number: number, mode: mode, cashier: cashier, lines: toCook, banner: banner));
+  }
 
   @override
   void initState() {
@@ -146,13 +162,13 @@ class _PosScreenState extends State<PosScreen> {
     String? error;
     if (mustPrint) {
       try {
-        await _hw.printKitchen(Tickets.kitchen(
+        await _kitchen(
           number: r.number,
           mode: _mode,
           cashier: user.name,
           lines: lines,
           banner: wasPending ? 'COMMANDE MODIFIÉE' : null,
-        ));
+        );
       } catch (e) {
         error = '$e';
       }
@@ -226,13 +242,13 @@ class _PosScreenState extends State<PosScreen> {
     }
     String? error;
     try {
-      await _hw.printKitchen(Tickets.kitchen(
+      await _kitchen(
         number: number,
         mode: sale['mode'] as String,
         cashier: Session.I.user!.name,
         lines: lines,
         banner: 'COMMANDE ANNULÉE',
-      ));
+      );
     } catch (e) {
       error = '$e';
     }
@@ -295,13 +311,13 @@ class _PosScreenState extends State<PosScreen> {
     final errors = <String>[];
     if (!_kitchenSent) {
       try {
-        await _hw.printKitchen(Tickets.kitchen(
+        await _kitchen(
           number: number,
           mode: _mode,
           cashier: user.name,
           lines: lines,
           banner: _pendingId != null ? 'COMMANDE MODIFIÉE' : null,
-        ));
+        );
       } catch (e) {
         errors.add('Cuisine : $e');
       }
@@ -356,7 +372,7 @@ class _PosScreenState extends State<PosScreen> {
             .where((v) => v >= total)
             .toList()
           ..sort();
-        return AlertDialog(
+        return AlertDialog(scrollable: true, 
           title: Text('Encaisser ${fmtDa(total)}'),
           content: SizedBox(
             width: 420,
@@ -528,6 +544,11 @@ class _PosScreenState extends State<PosScreen> {
           child: TextField(
             controller: _search,
             onChanged: (_) => setState(() {}),
+            readOnly: TouchKeyboard.enabled,
+            showCursor: true,
+            onTap: TouchKeyboard.enabled
+                ? () => TouchKeyboard.open(_search, onChanged: (_) => setState(() {}))
+                : null,
             decoration: InputDecoration(
               hintText: 'Rechercher',
               prefixIcon: const Icon(Icons.search, size: 20),
@@ -926,7 +947,7 @@ class _SalesDialogState extends State<_SalesDialog> {
   Widget build(BuildContext context) {
     final sales = widget.load();
     final canCancel = Session.I.can(Perm.annuler);
-    return AlertDialog(
+    return AlertDialog(scrollable: true, 
       titlePadding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
       title: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

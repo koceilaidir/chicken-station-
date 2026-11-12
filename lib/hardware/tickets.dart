@@ -188,39 +188,43 @@ class Tickets {
     String? banner,
   }) {
     final now = DateTime.now();
+    // Bon cuisine : gros numéro, mode de service, puis les plats en grand pour être lus de loin.
     final p = _hw.newKitchenTicket()
       ..align(PosAlign.center)
-      ..bold(true)
-      ..size(2, 2)
-      ..line('CUISINE');
-    // « COMMANDE ANNULÉE » ou « COMMANDE MODIFIÉE » bien visible en haut du bon.
+      ..bold(true);
     if (banner != null) {
       p
         ..size(1, 2)
-        ..line('*** $banner ***')
-        ..size(2, 2);
+        ..line('*** $banner ***');
     }
     p
-      ..align(PosAlign.left)
-      ..line('N° ${number.toString().padLeft(3, '0')}  ${fmtTime(now)}')
+      ..size(2, 2)
+      ..line('N° ${number.toString().padLeft(3, '0')}')
       ..size(1, 2)
-      ..line(mode.toUpperCase())
+      ..line('${mode.toUpperCase()}  ·  ${fmtTime(now)}')
       ..size(1, 1)
       ..bold(false)
       ..line('Caissier : $cashier')
-      ..separator('=')
-      ..bold(true);
+      ..align(PosAlign.left)
+      ..separator('=');
     for (final l in lines) {
       p
-        ..size(1, 2)
-        ..line('${l.qty}  ${l.product.name.toUpperCase()}')
-        ..size(1, 1);
-      if (l.note.isNotEmpty) p.line('   >> ${l.note.toUpperCase()}');
+        ..bold(true)
+        ..size(2, 2)
+        ..line('${l.qty} x ${l.product.name}')
+        ..size(1, 1)
+        ..bold(false);
+      if (l.note.isNotEmpty) {
+        p
+          ..bold(true)
+          ..line('     » ${l.note}')
+          ..bold(false);
+      }
     }
     final count = lines.fold<int>(0, (a, l) => a + l.qty);
     p
-      ..bold(false)
       ..separator('=')
+      ..align(PosAlign.center)
       ..line('$count article(s)')
       ..feed(4)
       ..cut();

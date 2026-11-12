@@ -24,7 +24,7 @@ class _SafeScreenState extends State<SafeScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => StatefulBuilder(
-        builder: (c, setD) => AlertDialog(
+        builder: (c, setD) => AlertDialog(scrollable: true, 
           title: Text(income ? 'Ajouter de l\'argent au coffre' : 'Sortir de l\'argent du coffre'),
           content: SizedBox(
             width: 420,

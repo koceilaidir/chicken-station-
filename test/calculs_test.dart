@@ -138,45 +138,27 @@ void main() {
   });
 
   group('Pointage et paie', () {
-    AttRecap recap({int openWhole = 26, int journee = 0, int demi = 0, int doubles = 0, int absent = 0, int salary = 39000}) => AttRecap(
-          openDays: openWhole,
-          openDaysWholeMonth: openWhole,
-          closedDays: 30 - openWhole,
-          journee: journee,
-          demi: demi,
-          doubles: doubles,
-          repos: 0,
-          absent: absent,
-          unmarked: 0,
-          salary: salary,
-        );
-
-    test('valeur d\'une journée = salaire ÷ jours d\'ouverture', () {
-      expect(recap().dayValue, 1500); // 39 000 ÷ 26
-    });
-
-    test('une demi-journée manquée = 0,5 jour retenu', () {
-      final r = recap(absent: 1, demi: 2);
-      expect(r.missedDays, 2.0);
-      expect(r.suggestedDeduction, 3000);
+    test('absence = une journée, demi = une demi-journée', () {
+      final r = AttRecap(absent: 2, demi: 1, doubles: 0, dayRate: 2000);
+      expect(r.missedDays, 2.5);
+      expect(r.suggestedDeduction, 5000);
     });
 
     test('chaque double journée = une journée en prime', () {
-      expect(recap(doubles: 3).suggestedBonus, 4500);
+      expect(AttRecap(absent: 0, demi: 0, doubles: 3, dayRate: 2000).suggestedBonus, 6000);
     });
 
-    test('jours travaillés : demi 0,5 et double 2', () {
-      expect(recap(journee: 20, demi: 2, doubles: 2).workedDays, 25.0);
-    });
-
-    test('mois sans jour d\'ouverture : pas de division par zéro', () {
-      expect(recap(openWhole: 0).dayValue, 0);
+    test('rien de pointé = rien à retenir ni à ajouter', () {
+      final r = AttRecap(absent: 0, demi: 0, doubles: 0, dayRate: 2000);
+      expect(r.isEmpty, isTrue);
+      expect(r.suggestedDeduction, 0);
+      expect(r.suggestedBonus, 0);
     });
 
     test('retenue et prime changent ce qui est dû', () {
-      final m = PayMonth(salary: 39000, advances: 10000, paid: 0, bonus: 4500, deduction: 3000);
-      expect(m.due, 40500);
-      expect(m.remaining, 30500);
+      final m = PayMonth(salary: 60000, advances: 10000, paid: 0, bonus: 4000, deduction: 3000);
+      expect(m.due, 61000);
+      expect(m.remaining, 51000);
     });
   });
 }

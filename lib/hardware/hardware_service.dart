@@ -6,6 +6,7 @@ import 'escpos.dart';
 import 'hardware_config.dart';
 import 'net_printer.dart';
 import 'serial_port_win.dart';
+import 'ticket_raster.dart';
 import 'win_raw_printer.dart';
 
 /// Point d'entrée unique vers le matériel de la caisse.
@@ -63,11 +64,22 @@ class HardwareService {
     return Isolate.run(() => SerialPortWin.write(p, b, data));
   }
 
+  /// Octets à envoyer : ticket redessiné avec une police lisible, ou texte de l'imprimante.
+  Future<Uint8List> _ticketBytes(EscPos ticket) async {
+    if (simulate || !config.prettyFont) return ticket.bytes();
+    try {
+      return await TicketRaster.render(ticket.items, TicketRaster.dotsFor(config.charsPerLine));
+    } catch (_) {
+      return ticket.bytes(); // en cas de souci de dessin, le ticket sort quand même
+    }
+  }
+
   /// Imprime un ticket construit avec [EscPos] (réel ou simulé).
-  Future<void> printTicket(EscPos ticket) => sendToTicketPrinter(ticket.bytes(), preview: ticket.preview);
+  Future<void> printTicket(EscPos ticket) async =>
+      sendToTicketPrinter(await _ticketBytes(ticket), preview: ticket.preview);
 
   /// Envoie un bon en cuisine (réel ou simulé).
-  Future<void> printKitchen(EscPos ticket) => sendToKitchen(ticket.bytes(), preview: ticket.preview);
+  Future<void> printKitchen(EscPos ticket) async => sendToKitchen(await _ticketBytes(ticket), preview: ticket.preview);
 
   EscPos newTicket() => EscPos(width: config.charsPerLine, codePage: config.codePage);
 

@@ -162,7 +162,7 @@ class _ClosingScreenState extends State<ClosingScreen> {
     final diff = d.diff ?? 0;
     await showDialog<void>(
       context: context,
-      builder: (c) => AlertDialog(
+      builder: (c) => AlertDialog(scrollable: true, 
         title: Text('Clôture du ${fmtLongDate(d.openedAt)}'),
         content: SizedBox(
           width: 460,
@@ -243,6 +243,13 @@ class _ClosingScreenState extends State<ClosingScreen> {
           title: 'Caisse du jour',
           subtitle: day == null ? 'Aucune journée ouverte' : '${fmtLongDate(day.openedAt)} · ouverte à ${fmtTime(day.openedAt)}',
           actions: [
+            if (Session.I.can(Perm.cloture) && Session.I.can(Perm.recette))
+              SecondaryButton(
+                label: 'Rattraper une journée',
+                onPressed: () async {
+                  if (await catchUpDayDialog(context) && mounted) setState(() {});
+                },
+              ),
             if (Session.I.can(Perm.recette) && _lastClosed() != null)
               SecondaryButton(label: 'Clôture précédente', onPressed: () => _showDay(_lastClosed()!)),
             if (day == null && Session.I.can(Perm.cloture)) PrimaryButton(label: 'Ouvrir la journée', onPressed: _open),

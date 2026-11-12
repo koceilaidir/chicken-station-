@@ -32,6 +32,7 @@ class HardwareConfig {
     this.displayBaud = 2400,
     this.displayProtocol = DisplayProtocol.led8,
     this.simulate = true,
+    this.prettyFont = true,
   });
 
   String ticketPrinterName;
@@ -49,6 +50,9 @@ class HardwareConfig {
   /// Activé par défaut pour tester l'appli hors de la boutique.
   bool simulate;
 
+  /// Tickets dessinés avec une vraie police lisible (envoyés en image) plutôt qu'avec la police de l'imprimante.
+  bool prettyFont;
+
   Map<String, dynamic> toJson() => {
         'ticketPrinterName': ticketPrinterName,
         'codePage': codePage,
@@ -61,6 +65,7 @@ class HardwareConfig {
         'displayBaud': displayBaud,
         'displayProtocol': displayProtocol.name,
         'simulate': simulate,
+        'prettyFont': prettyFont,
       };
 
   factory HardwareConfig.fromJson(Map<String, dynamic> j) {
@@ -82,6 +87,7 @@ class HardwareConfig {
       displayBaud: (j['displayBaud'] ?? 2400) as int,
       displayProtocol: proto,
       simulate: (j['simulate'] ?? true) as bool,
+      prettyFont: (j['prettyFont'] ?? true) as bool,
     );
   }
 

@@ -8,6 +8,7 @@ import '../ui/format.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import '../data/repos.dart';
+import 'day_dialogs.dart';
 import 'purchasing_screen.dart';
 
 enum _Tab {
@@ -18,8 +19,6 @@ enum _Tab {
   const _Tab(this.label);
   final String label;
 }
-
-const _units = ['pièce', 'kg', 'g', 'L', 'cl', 'tranche', 'paquet', 'boîte', 'bouteille', 'canette', 'carton', 'sac'];
 
 /// Dépenses : fournisseurs et leurs bons d'achat, employés et leur paie, charges (loyer, électricité…).
 /// Tout ce qui sort de l'argent passe par ici (ou par une dépense de caisse à la clôture).
@@ -48,9 +47,15 @@ class _DepensesScreenState extends State<DepensesScreen> {
         if (Session.I.can(Perm.coffre)) _Tab.charges,
       ];
 
-  Future<void> _newBon() async {
-    final ok = await showDialog<bool>(context: context, builder: (_) => const ReceptionDialog());
-    if (ok == true && mounted) setState(() {});
+  Future<void> _divers() async {
+    if (await addExpenseDialog(context, divers: true) && mounted) {
+      toast(context, 'Dépense enregistrée.');
+      setState(() {});
+    }
+  }
+
+  Future<void> _history() async {
+    await showDialog<void>(context: context, builder: (_) => const _ExpenseHistory());
   }
 
   @override
@@ -69,7 +74,10 @@ class _DepensesScreenState extends State<DepensesScreen> {
           title: 'Dépenses',
           subtitle: 'Fournisseurs, employés et charges : tout ce qui sort de l\'argent',
           actions: [
-            if (Session.I.can(Perm.reception)) PrimaryButton(label: "+ Bon d'achat", onPressed: _newBon),
+            SecondaryButton(label: 'Historique', onPressed: _history),
+            const SizedBox(width: 8),
+            if (Session.I.can(Perm.depense) || Session.I.can(Perm.coffre))
+              PrimaryButton(label: '+ Dépense divers', onPressed: _divers),
           ],
         ),
         const SizedBox(height: 14),
@@ -246,7 +254,7 @@ class _DepensesScreenState extends State<DepensesScreen> {
       builder: (d) => StatefulBuilder(
         builder: (d, setD) {
           final list = ChargesRepo.history(c.id);
-          return AlertDialog(
+          return AlertDialog(scrollable: true, 
             title: Text(c.label),
             content: SizedBox(
               width: 520,
@@ -323,99 +331,192 @@ class _DepensesScreenState extends State<DepensesScreen> {
   }
 }
 
+// ============================================================================ historique des dépenses
+
+/// Toutes les dépenses d'une période, regroupées par type : salaires, fournisseurs, charges, divers…
+class _ExpenseHistory extends StatefulWidget {
+  const _ExpenseHistory();
+
+  @override
+  State<_ExpenseHistory> createState() => _ExpenseHistoryState();
+}
+
+class _ExpenseHistoryState extends State<_ExpenseHistory> {
+  DateTime _month = DateTime(DateTime.now().year, DateTime.now().month);
+  String? _type;
+
+  @override
+  Widget build(BuildContext context) {
+    final from = _month;
+    final to = DateTime(_month.year, _month.month + 1);
+    final all = ExpenseRepo.between(from, to);
+    final active = all.where((e) => !e.cancelled).toList();
+    final byType = <String, int>{};
+    for (final e in active) {
+      byType[e.category] = (byType[e.category] ?? 0) + e.amount;
+    }
+    final types = byType.keys.toList()..sort((a, b) => byType[b]!.compareTo(byType[a]!));
+    final shown = _type == null ? all : all.where((e) => e.category == _type).toList();
+    final total = active.fold<int>(0, (a, e) => a + e.amount);
+    final isCurrent = _month.year == DateTime.now().year && _month.month == DateTime.now().month;
+    return Dialog(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      insetPadding: const EdgeInsets.all(24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 820, maxHeight: 760),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text('Historique des dépenses', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800)),
+                  ),
+                  IconButton(
+                    onPressed: () => setState(() => _month = DateTime(_month.year, _month.month - 1)),
+                    icon: const Icon(Icons.chevron_left),
+                  ),
+                  Text(fmtMonth(_month), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                  IconButton(
+                    onPressed: isCurrent ? null : () => setState(() => _month = DateTime(_month.year, _month.month + 1)),
+                    icon: const Icon(Icons.chevron_right),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(color: AppColors.yellowSoft, borderRadius: BorderRadius.circular(14)),
+                child: Row(
+                  children: [
+                    const Text('Total dépensé', style: TextStyle(fontWeight: FontWeight.w600)),
+                    const Spacer(),
+                    Text(fmtDa(total), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  ChoiceChip(label: const Text('Tout'), selected: _type == null, onSelected: (_) => setState(() => _type = null)),
+                  for (final t in types)
+                    ChoiceChip(
+                      label: Text('$t · ${fmtDa(byType[t]!)}'),
+                      selected: _type == t,
+                      onSelected: (_) => setState(() => _type = _type == t ? null : t),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: shown.isEmpty
+                    ? const Center(child: Text('Aucune dépense sur cette période.', style: TextStyle(color: AppColors.textSecondary)))
+                    : ListView(
+                        children: [
+                          for (final e in shown)
+                            Opacity(
+                              opacity: e.cancelled ? 0.45 : 1,
+                              child: KeyValueRow(
+                                e.cancelled ? '${e.label} (annulée)' : e.label,
+                                fmtDa(e.amount),
+                                sub: '${fmtDateTime(e.createdAt)} · ${e.category} · '
+                                    '${e.source == 'caisse' ? 'de la caisse' : 'du coffre'}'
+                                    '${e.userName.isEmpty ? '' : ' · ${e.userName}'}',
+                              ),
+                            ),
+                        ],
+                      ),
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Fermer')),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ============================================================================ fenêtre « bon d'achat »
 
 class _Line {
-  _Line(this.ingredient) : price = TextEditingController(text: ingredient.cost > 0 ? '${ingredient.cost}' : '');
-  Ingredient ingredient;
-  final qty = TextEditingController(text: '1');
-  final TextEditingController price;
+  _Line(String name, {this.unit = 'kg'}) : name = TextEditingController(text: name);
+  final TextEditingController name;
+  final qty = TextEditingController();
+  final price = TextEditingController();
+
+  /// 'kg' ou 'pièce' : la quantité et le prix suivent cette unité.
+  String unit;
 
   double get q => parseQty(qty.text) ?? 0;
   int get p => parseAmount(price.text) ?? 0;
   int get total => (q * p).round();
+
+  void dispose() {
+    name.dispose();
+    qty.dispose();
+    price.dispose();
+  }
 }
 
-/// Saisie d'un bon d'achat tel qu'on le reçoit : date, fournisseur, articles (quantité × prix), payé ou à crédit.
+/// Bon d'achat d'un fournisseur, tel qu'on le reçoit : date, produits tapés à la main
+/// (quantité ou kilos × prix), et ce qu'on lui donne maintenant.
+/// Sans fournisseur ([supplier] null) : achat payé sur place (marché, dépannage).
 class ReceptionDialog extends StatefulWidget {
-  const ReceptionDialog({super.key, this.supplierId});
-  final int? supplierId;
+  const ReceptionDialog({super.key, this.supplier});
+  final Supplier? supplier;
 
   @override
   State<ReceptionDialog> createState() => _ReceptionDialogState();
 }
 
 class _ReceptionDialogState extends State<ReceptionDialog> {
-  late List<Ingredient> _ings = StockRepo.ingredients(onlyActive: true);
-  late List<Supplier> _suppliers = SupplierRepo.all(onlyActive: true);
-  int? _supplierId;
   final _lines = <_Line>[];
   final _paid = TextEditingController();
   final _note = TextEditingController();
-  String _source = 'coffre';
+  String _source = 'caisse';
   DateTime _date = DateTime.now();
   bool _saving = false;
+
+  Supplier? get _s => widget.supplier;
 
   @override
   void initState() {
     super.initState();
-    _supplierId = widget.supplierId;
-    if (_ings.isNotEmpty) _lines.add(_Line(_ings.first));
+    _addLine(_s?.product ?? '');
   }
 
   @override
   void dispose() {
     for (final l in _lines) {
-      l.qty.dispose();
-      l.price.dispose();
+      l.dispose();
     }
     _paid.dispose();
     _note.dispose();
     super.dispose();
   }
 
+  void _addLine(String name) {
+    final l = _Line(name);
+    if (name.isNotEmpty) {
+      final last = StockRepo.lastPrice(name, l.unit);
+      if (last > 0) l.price.text = '$last';
+    }
+    _lines.add(l);
+  }
+
   int get _total => _lines.fold<int>(0, (a, l) => a + l.total);
+  int get _paidNow => parseAmount(_paid.text) ?? 0;
 
   bool _sameDay(DateTime a, DateTime b) => a.year == b.year && a.month == b.month && a.day == b.day;
-
-  Future<void> _newSupplier() async {
-    final name = await askText(context, 'Nouveau fournisseur', hint: 'Nom');
-    if (name == null || name.isEmpty) return;
-    final id = SupplierRepo.add(Session.I.user!.id, name, '');
-    setState(() {
-      _suppliers = SupplierRepo.all(onlyActive: true);
-      _supplierId = id;
-    });
-  }
-
-  /// Crée un article qui n'est pas dans la liste et le met sur [line] (ou sur une nouvelle ligne).
-  Future<void> _newArticle(_Line? line) async {
-    final name = await askText(context, 'Nouvel article', hint: "Nom (ex. Huile d'olive)");
-    if (name == null || name.isEmpty || !mounted) return;
-    final unit = await showDialog<String>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: Text('Unité de « $name »'),
-        content: Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          children: [for (final u in _units) ActionChip(label: Text(u), onPressed: () => Navigator.pop(c, u))],
-        ),
-      ),
-    );
-    if (unit == null) return;
-    final id = StockRepo.addIngredient(Session.I.user!.id, name, unit);
-    setState(() {
-      _ings = StockRepo.ingredients(onlyActive: true);
-      final created = _ings.firstWhere((i) => i.id == id);
-      if (line == null) {
-        _lines.add(_Line(created));
-      } else {
-        line.ingredient = created;
-        line.price.text = '';
-      }
-    });
-  }
 
   Future<void> _pickDate() async {
     final now = DateTime.now();
@@ -423,51 +524,54 @@ class _ReceptionDialogState extends State<ReceptionDialog> {
     if (d != null) setState(() => _date = d);
   }
 
-  void _save() {
-    final valid = _lines.where((l) => l.q > 0 && l.p > 0).toList();
+  Future<void> _save() async {
+    final valid = _lines.where((l) => l.name.text.trim().isNotEmpty && l.q > 0 && l.p > 0).toList();
     if (valid.isEmpty) {
-      toast(context, 'Indiquez au moins un article avec sa quantité et son prix.', error: true);
+      toast(context, 'Tapez au moins un produit avec sa quantité et son prix.', error: true);
       return;
     }
-    final paid = parseAmount(_paid.text) ?? 0;
     final total = valid.fold<int>(0, (a, l) => a + l.total);
-    if (paid < 0 || paid > total) {
-      toast(context, 'Le montant payé doit être entre 0 et ${fmtDa(total)}.', error: true);
-      return;
-    }
+    final paid = _paidNow;
     if (paid > 0 && !Session.I.can(Perm.fournisseurs)) {
       toast(context, "Vous n'avez pas le droit de payer les fournisseurs : laissez « payé » vide.", error: true);
       return;
     }
-    final supplier = _suppliers.where((s) => s.id == _supplierId).firstOrNull;
-    if (supplier == null && paid < total) {
-      toast(context, 'Sans fournisseur, le bon doit être payé en entier (personne à qui devoir le reste).', error: true);
+    if (_s == null && paid != total) {
+      toast(context, 'Sans fournisseur, le bon se paie en entier sur place.', error: true);
       return;
+    }
+    var source = _source;
+    if (paid > 0) {
+      final src = await ensureCashOpen(context, source);
+      if (src == null || !mounted) return;
+      source = src;
     }
     final uid = Session.I.user!.id;
     setState(() => _saving = true);
     try {
       StockRepo.receive(
         userId: uid,
-        supplierId: supplier?.id,
-        lines: [for (final l in valid) ReceptionLine(l.ingredient, l.q, l.p)],
+        supplierId: _s?.id,
+        lines: [for (final l in valid) ReceptionLine(StockRepo.articleNamed(uid, l.name.text, l.unit), l.q, l.p)],
         note: _note.text.trim(),
-        supplierName: supplier?.name ?? '',
+        supplierName: _s?.name ?? '',
         date: _sameDay(_date, DateTime.now()) ? null : _date,
       );
       if (paid > 0) {
-        if (supplier != null) {
-          supplier.debt += total;
-          SupplierRepo.pay(userId: uid, supplier: supplier, amount: paid, source: _source, note: 'avec le bon');
+        if (_s != null) {
+          _s!.debt += total;
+          SupplierRepo.pay(userId: uid, supplier: _s!, amount: paid, source: source, note: 'avec le bon');
         } else {
-          SupplierRepo.payWithoutSupplier(userId: uid, amount: paid, source: _source, label: 'Achat marchandise');
+          SupplierRepo.payWithoutSupplier(userId: uid, amount: paid, source: source, label: 'Achat marchandise');
         }
       }
-      toast(context, "Bon d'achat enregistré : ${valid.length} article(s), ${fmtDa(total)}.");
+      if (!mounted) return;
+      toast(context, "Bon d'achat enregistré : ${fmtDa(total)}${paid > 0 ? ', payé ${fmtDa(paid)}' : ', à crédit'}.");
       Navigator.pop(context, true);
     } catch (e) {
+      if (!mounted) return;
       setState(() => _saving = false);
-      toast(context, '$e', error: true);
+      toast(context, e is StateError ? e.message : '$e', error: true);
     }
   }
 
@@ -476,162 +580,270 @@ class _ReceptionDialogState extends State<ReceptionDialog> {
     final canPay = Session.I.can(Perm.fournisseurs);
     final today = DateTime.now();
     final yesterday = today.subtract(const Duration(days: 1));
-    return AlertDialog(
-      title: const Text("Bon d'achat"),
-      content: SizedBox(
-        width: 780,
-        height: 560,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: DropdownButtonFormField<int?>(
-                    initialValue: _supplierId,
-                    isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'Fournisseur'),
-                    items: [
-                      const DropdownMenuItem<int?>(value: null, child: Text('Sans fournisseur (marché, dépannage…)')),
-                      for (final s in _suppliers)
-                        DropdownMenuItem<int?>(value: s.id, child: Text('${s.name}${s.debt > 0 ? ' · doit ${fmtDa(s.debt)}' : ''}')),
-                    ],
-                    onChanged: (v) => setState(() => _supplierId = v),
-                  ),
-                ),
-                if (canPay) TextButton(onPressed: _newSupplier, child: const Text('+ Nouveau')),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 6,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                const Text('Date du bon :  ', style: TextStyle(color: AppColors.textSecondary)),
-                ChoiceChip(label: const Text("Aujourd'hui"), selected: _sameDay(_date, today), onSelected: (_) => setState(() => _date = today)),
-                ChoiceChip(label: const Text('Hier'), selected: _sameDay(_date, yesterday), onSelected: (_) => setState(() => _date = yesterday)),
-                ActionChip(
-                  avatar: const Icon(Icons.calendar_today, size: 16),
-                  label: Text(_sameDay(_date, today) || _sameDay(_date, yesterday) ? 'Autre date' : fmtDate(_date)),
-                  onPressed: _pickDate,
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            const Row(
-              children: [
-                Expanded(flex: 4, child: Text('Article', style: TextStyle(fontSize: 12, color: AppColors.textSecondary))),
-                SizedBox(width: 8),
-                Expanded(flex: 2, child: Text('Quantité', style: TextStyle(fontSize: 12, color: AppColors.textSecondary))),
-                SizedBox(width: 8),
-                Expanded(flex: 2, child: Text('Prix unitaire (DA)', style: TextStyle(fontSize: 12, color: AppColors.textSecondary))),
-                SizedBox(width: 148),
-              ],
-            ),
-            Expanded(
-              child: ListView(
-                children: [
-                  for (final l in _lines)
-                    Padding(
-                      key: ObjectKey(l),
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            flex: 4,
-                            child: DropdownButtonFormField<int>(
-                              key: ValueKey('${identityHashCode(l)}-${l.ingredient.id}-${_ings.length}'),
-                              initialValue: l.ingredient.id,
-                              isExpanded: true,
-                              items: [for (final i in _ings) DropdownMenuItem(value: i.id, child: Text('${i.name} (${i.unit})'))],
-                              onChanged: (v) => setState(() {
-                                l.ingredient = _ings.firstWhere((i) => i.id == v);
-                                // Prix proposé : le dernier payé pour cet article.
-                                l.price.text = l.ingredient.cost > 0 ? '${l.ingredient.cost}' : '';
-                              }),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(flex: 2, child: FieldBox(controller: l.qty, hint: l.ingredient.unit, onChanged: (_) => setState(() {}))),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            flex: 2,
-                            child: FieldBox(controller: l.price, hint: 'DA / ${l.ingredient.unit}', numeric: true, onChanged: (_) => setState(() {})),
-                          ),
-                          SizedBox(
-                            width: 100,
-                            child: Text(fmtDa(l.total), textAlign: TextAlign.right, style: const TextStyle(fontWeight: FontWeight.w700)),
-                          ),
-                          IconButton(
-                            onPressed: _lines.length <= 1 ? null : () => setState(() => _lines.remove(l)),
-                            icon: const Icon(Icons.close, size: 18),
-                          ),
-                        ],
-                      ),
-                    ),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      if (_ings.isNotEmpty)
-                        TextButton.icon(
-                          onPressed: () => setState(() => _lines.add(_Line(_ings.first))),
-                          icon: const Icon(Icons.add),
-                          label: const Text('Ajouter une ligne'),
-                        ),
-                      TextButton.icon(
-                        onPressed: () => _newArticle(null),
-                        icon: const Icon(Icons.fiber_new_outlined),
-                        label: const Text('Article pas dans la liste'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const Divider(),
-            Row(
-              children: [
-                const Text('Total du bon', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                const Spacer(),
-                Text(fmtDa(_total), style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800)),
-              ],
-            ),
-            const SizedBox(height: 8),
-            if (canPay)
+    final before = _s?.debt ?? 0;
+    final after = before + _total - _paidNow;
+    const label = TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w600);
+    return Dialog(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      insetPadding: const EdgeInsets.all(24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 820, maxHeight: 700),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // En-tête : le fournisseur (fixe) et ce qu'on lui doit déjà.
               Row(
                 children: [
+                  Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(color: AppColors.yellowSoft, borderRadius: BorderRadius.circular(14)),
+                    child: const Icon(Icons.receipt_long_outlined),
+                  ),
+                  const SizedBox(width: 12),
                   Expanded(
-                    child: FieldBox(
-                      controller: _paid,
-                      hint: _supplierId == null ? 'Payé maintenant (en entier)' : 'Payé maintenant (vide = à crédit)',
-                      numeric: true,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text("Bon d'achat", style: label),
+                        Text(_s?.name ?? 'Achat sans fournisseur',
+                            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: -0.4)),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 6),
-                  TextButton(onPressed: () => setState(() => _paid.text = '$_total'), child: const Text('Tout payé')),
-                  const SizedBox(width: 6),
-                  IosSegmented<String>(
-                    expand: false,
-                    values: const ['coffre', 'caisse'],
-                    selected: _source,
-                    label: (v) => v == 'coffre' ? 'Du coffre' : 'De la caisse',
-                    onChanged: (v) => setState(() => _source = v),
+                  if (_s != null)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(before < 0 ? 'Avance chez lui' : 'Déjà dû', style: label),
+                        Text(fmtDa(before.abs()),
+                            style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                                color: before > 0 ? AppColors.redText : AppColors.greenText)),
+                      ],
+                    ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              // Tout le contenu défile : le clavier de l'écran tactile ne cache jamais le champ en cours.
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+              // Date du bon
+              Row(
+                children: [
+                  const Text('Date du bon', style: label),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Wrap(
+                      spacing: 6,
+                      children: [
+                        ChoiceChip(
+                            label: const Text("Aujourd'hui"),
+                            selected: _sameDay(_date, today),
+                            onSelected: (_) => setState(() => _date = today)),
+                        ChoiceChip(
+                            label: const Text('Hier'),
+                            selected: _sameDay(_date, yesterday),
+                            onSelected: (_) => setState(() => _date = yesterday)),
+                        ChoiceChip(
+                          avatar: const Icon(Icons.calendar_today, size: 16),
+                          label: Text(_sameDay(_date, today) || _sameDay(_date, yesterday) ? 'Autre date' : fmtDate(_date)),
+                          selected: !_sameDay(_date, today) && !_sameDay(_date, yesterday),
+                          onSelected: (_) => _pickDate(),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
-            const SizedBox(height: 8),
-            FieldBox(controller: _note, hint: 'N° du bon, remarque…'),
-          ],
+              const SizedBox(height: 14),
+              const Row(
+                children: [
+                  Expanded(flex: 5, child: Text('Produit', style: label)),
+                  SizedBox(width: 8),
+                  SizedBox(width: 150, child: Text('Vendu au', style: label)),
+                  SizedBox(width: 8),
+                  Expanded(flex: 2, child: Text('Quantité', style: label)),
+                  SizedBox(width: 8),
+                  Expanded(flex: 3, child: Text('Prix (DA)', style: label)),
+                  SizedBox(width: 136),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final l in _lines)
+                      Container(
+                        key: ObjectKey(l),
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(color: AppColors.fill, borderRadius: BorderRadius.circular(14)),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              flex: 5,
+                              child: _WhiteField(controller: l.name, hint: 'ex. Viande', onChanged: (_) => setState(() {})),
+                            ),
+                            const SizedBox(width: 8),
+                            SizedBox(
+                              width: 150,
+                              child: IosSegmented<String>(
+                                values: const ['kg', 'pièce'],
+                                selected: l.unit,
+                                label: (v) => v == 'kg' ? 'Kilo' : 'Pièce',
+                                onChanged: (v) => setState(() => l.unit = v),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              flex: 2,
+                              child: _WhiteField(
+                                controller: l.qty,
+                                hint: l.unit == 'kg' ? 'kg' : 'nombre',
+                                decimal: true,
+                                onChanged: (_) => setState(() {}),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              flex: 3,
+                              child: _WhiteField(
+                                controller: l.price,
+                                hint: l.unit == 'kg' ? 'DA le kilo' : 'DA la pièce',
+                                numeric: true,
+                                onChanged: (_) => setState(() {}),
+                              ),
+                            ),
+                            SizedBox(
+                              width: 100,
+                              child: Text(fmtDa(l.total),
+                                  textAlign: TextAlign.right, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+                            ),
+                            IconButton(
+                              tooltip: 'Enlever la ligne',
+                              onPressed: _lines.length <= 1
+                                  ? null
+                                  : () => setState(() {
+                                        _lines.remove(l);
+                                        l.dispose();
+                                      }),
+                              icon: const Icon(Icons.close, size: 18),
+                            ),
+                          ],
+                        ),
+                      ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Tooltip(
+                        message: 'Ajouter un produit',
+                        child: Material(
+                          color: AppColors.yellow,
+                          shape: const CircleBorder(),
+                          child: InkWell(
+                            customBorder: const CircleBorder(),
+                            onTap: () => setState(() => _addLine('')),
+                            child: const SizedBox(width: 44, height: 44, child: Icon(Icons.add, size: 26)),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              const Divider(height: 22),
+              Row(
+                children: [
+                  const Text('Total du bon', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                  const Spacer(),
+                  Text(fmtDa(_total), style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.5)),
+                ],
+              ),
+              const SizedBox(height: 10),
+              if (canPay) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: FieldBox(
+                        controller: _paid,
+                        hint: _s == null ? 'Payé maintenant (en entier)' : 'Donné maintenant (vide = à crédit)',
+                        numeric: true,
+                        onChanged: (_) => setState(() {}),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    SecondaryButton(label: 'Montant du bon', onPressed: () => setState(() => _paid.text = '$_total')),
+                    const SizedBox(width: 8),
+                    IosSegmented<String>(
+                      expand: false,
+                      values: const ['caisse', 'coffre'],
+                      selected: _source,
+                      label: (v) => v == 'coffre' ? 'Du coffre' : 'De la caisse',
+                      onChanged: (v) => setState(() => _source = v),
+                    ),
+                  ],
+                ),
+                if (_s != null && _total > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      after > 0
+                          ? 'Après ce bon : il restera ${fmtDa(after)} à lui payer.'
+                          : after < 0
+                              ? 'Après ce bon : ${fmtDa(-after)} d\'avance chez lui.'
+                              : 'Après ce bon : vous ne lui devez plus rien.',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: after > 0 ? AppColors.redText : AppColors.greenText,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 10),
+              ],
+              FieldBox(controller: _note, hint: 'Remarque, n° du bon (facultatif)'),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  const Spacer(),
+                  TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Retour')),
+                  const SizedBox(width: 8),
+                  PrimaryButton(label: 'Enregistrer le bon', onPressed: _saving ? null : _save),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Retour')),
-        FilledButton(
-          style: FilledButton.styleFrom(backgroundColor: AppColors.yellow, foregroundColor: AppColors.text),
-          onPressed: _saving ? null : _save,
-          child: const Text('Enregistrer le bon'),
-        ),
-      ],
     );
   }
+}
+
+/// Champ blanc, pour les lignes du bon posées sur fond gris.
+class _WhiteField extends StatelessWidget {
+  const _WhiteField({required this.controller, required this.hint, this.numeric = false, this.decimal = false, this.onChanged});
+  final TextEditingController controller;
+  final String hint;
+  final bool numeric;
+  final bool decimal;
+  final ValueChanged<String>? onChanged;
+
+  @override
+  Widget build(BuildContext context) => Theme(
+        data: Theme.of(context).copyWith(
+          inputDecorationTheme: Theme.of(context).inputDecorationTheme.copyWith(fillColor: Colors.white),
+        ),
+        child: FieldBox(controller: controller, hint: hint, numeric: numeric, decimal: decimal, onChanged: onChanged, fill: Colors.white),
+      );
 }

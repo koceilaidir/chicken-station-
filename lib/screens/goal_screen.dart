@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../data/purchasing.dart';
-import '../state/session.dart';
 import '../ui/format.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';

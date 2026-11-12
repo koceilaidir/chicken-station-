@@ -13,15 +13,18 @@ import 'hardware/hardware_service.dart';
 import 'screens/attendance_screen.dart';
 import 'screens/backup_screen.dart';
 import 'screens/closing_screen.dart';
+import 'screens/day_dialogs.dart';
 import 'screens/login_screen.dart';
 import 'screens/menu_admin_screen.dart';
 import 'screens/pos_screen.dart';
+import 'screens/purchasing_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/stock_screen.dart';
 import 'screens/goal_screen.dart';
 import 'state/session.dart';
 import 'system/windows_shell.dart';
 import 'ui/theme.dart';
+import 'ui/touch_keyboard.dart';
 import 'ui/widgets.dart';
 
 Future<void> main() async {
@@ -139,7 +142,7 @@ class ChickenStationApp extends StatelessWidget {
       builder: (context, child) => GestureDetector(
         behavior: HitTestBehavior.translucent,
         onTap: _hideKeyboard,
-        child: child,
+        child: TouchKeyboardHost(child: child ?? const SizedBox.shrink()),
       ),
       home: ListenableBuilder(
         listenable: Session.I,
@@ -150,7 +153,10 @@ class ChickenStationApp extends StatelessWidget {
 }
 
 /// Enlève le curseur du champ en cours : le clavier tactile de Windows se referme.
-void _hideKeyboard() => FocusManager.instance.primaryFocus?.unfocus();
+void _hideKeyboard() {
+  FocusManager.instance.primaryFocus?.unfocus();
+  TouchKeyboard.close();
+}
 
 /// À la fermeture d'une fenêtre, Flutter remet le curseur dans le champ touché avant :
 /// sur écran tactile, ça rouvrait le clavier. On l'enlève.
@@ -202,10 +208,17 @@ class _AppShellState extends State<AppShell> {
     HardwareService.I.onSimulated = _onSimulated;
     _resetIdle();
     // Rappel à l'administrateur si les données ne sont pas protégées.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !Session.I.can(Perm.sauvegarde)) return;
-      final w = BackupService.healthWarning();
-      if (w != null) toast(context, w, error: true);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      if (Session.I.can(Perm.sauvegarde)) {
+        final w = BackupService.healthWarning();
+        if (w != null) toast(context, w, error: true);
+      }
+      // Rappel : ouvrir la caisse avant de travailler.
+      await remindOpenDay(context);
+      // Nouveau mois : la paie du mois dernier est-elle réglée ?
+      if (mounted) await remindUnpaidPayroll(context);
+      if (mounted) setState(() {});
     });
   }
 

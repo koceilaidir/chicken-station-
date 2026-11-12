@@ -37,18 +37,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final closed = AttendanceRepo.closedReason(_key);
-    final weekly = AttendanceRepo.weeklyClosed.contains(_day.weekday);
+    final opened = AttendanceRepo.shopOpened(_key);
     final marks = AttendanceRepo.forDay(_key);
     final staff = _staff;
-    final unmarked = staff.where((e) => !marks.containsKey(e.id)).length;
     return ListView(
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
       children: [
-        PageHeader(
+        const PageHeader(
           title: 'Pointage',
-          subtitle: 'Qui a travaillé, et combien : sert au calcul de la paie en fin de mois',
-          actions: [SecondaryButton(label: 'Jours de fermeture', onPressed: _weeklyDialog)],
+          subtitle: 'Pointez seulement les absences, demi-journées et doubles. Rien de pointé = journée normale.',
         ),
         const SizedBox(height: 14),
         // Choix du jour
@@ -71,54 +68,19 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        if (closed != null)
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(color: AppColors.yellowSoft, borderRadius: BorderRadius.circular(14)),
-            child: Row(
-              children: [
-                const Icon(Icons.store_mall_directory_outlined),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    '$closed. Personne n\'est compté absent ce jour-là.',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-                if (!weekly)
-                  TextButton(
-                    onPressed: () {
-                      AttendanceRepo.setClosed(_uid, _key, false);
-                      setState(() {});
-                    },
-                    child: const Text('Rouvrir ce jour'),
-                  ),
-              ],
-            ),
-          )
-        else
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  unmarked == 0 ? 'Tout le monde est pointé.' : '$unmarked employé(s) pas encore pointé(s).',
-                  style: TextStyle(color: unmarked == 0 ? AppColors.greenText : AppColors.textSecondary, fontWeight: FontWeight.w600),
-                ),
-              ),
-              if (unmarked > 0)
-                SecondaryButton(
-                  label: 'Tous en journée',
-                  onPressed: () {
-                    for (final e in staff) {
-                      if (!marks.containsKey(e.id)) AttendanceRepo.set(_uid, e, _key, AttKind.journee);
-                    }
-                    setState(() {});
-                  },
-                ),
-              const SizedBox(width: 8),
-              SecondaryButton(label: 'Fast-food fermé ce jour', onPressed: _closeDay),
-            ],
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: opened ? AppColors.greenSoft : AppColors.fill,
+            borderRadius: BorderRadius.circular(12),
           ),
+          child: Text(
+            opened
+                ? 'Caisse ouverte ce jour : les employés non pointés ont fait leur journée normale.'
+                : "Caisse pas ouverte ce jour. Si le fast-food a quand même travaillé (panne…), pointez comme d'habitude.",
+            style: TextStyle(fontWeight: FontWeight.w600, color: opened ? AppColors.greenText : AppColors.textSecondary),
+          ),
+        ),
         const SizedBox(height: 12),
         IosCard(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
@@ -164,7 +126,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         ),
         const SizedBox(height: 6),
         const Text(
-          'Demi = une demi-journée · Double = deux services · Repos = jour de repos prévu (pas une absence). '
+          'Absent = journée retirée · Demi = demi-journée retirée · Double = journée ajoutée, au prix de la journée de chacun. '
           'Touchez à nouveau un bouton choisi pour l\'enlever.',
           style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
         ),
@@ -177,7 +139,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   Widget _monthRecap(List<Employee> staff) {
     final mk = monthKey(_day);
     if (staff.isEmpty) return const SizedBox.shrink();
-    Widget cell(String t, {bool bold = false, Color? color, double w = 74}) => SizedBox(
+    Widget cell(String t, {bool bold = false, Color? color, double w = 84}) => SizedBox(
           width: w,
           child: Text(t,
               textAlign: TextAlign.center,
@@ -196,8 +158,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               children: [
                 Row(children: [
                   const SizedBox(width: 170, child: Text('Employé', style: TextStyle(fontSize: 12, color: AppColors.textSecondary))),
-                  for (final h in ['Journées', 'Demi', 'Doubles', 'Repos', 'Absences', 'Non pointés'])
-                    cell(h, color: AppColors.textSecondary, w: h == 'Non pointés' ? 90 : 74),
+                  for (final h in ['Absences', 'Demi', 'Doubles', 'Journée', 'Retenue', 'Prime'])
+                    cell(h, color: AppColors.textSecondary),
                 ]),
                 const Divider(),
                 for (final e in staff)
@@ -207,12 +169,14 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                       padding: const EdgeInsets.symmetric(vertical: 6),
                       child: Row(children: [
                         SizedBox(width: 170, child: Text(e.name, style: const TextStyle(fontWeight: FontWeight.w700))),
-                        cell('${r.journee}'),
-                        cell('${r.demi}'),
-                        cell('${r.doubles}', color: r.doubles > 0 ? AppColors.greenText : null, bold: r.doubles > 0),
-                        cell('${r.repos}'),
                         cell('${r.absent}', color: r.absent > 0 ? AppColors.redText : null, bold: r.absent > 0),
-                        cell('${r.unmarked}', w: 90, color: r.unmarked > 0 ? AppColors.redText : null, bold: r.unmarked > 0),
+                        cell('${r.demi}', color: r.demi > 0 ? AppColors.redText : null, bold: r.demi > 0),
+                        cell('${r.doubles}', color: r.doubles > 0 ? AppColors.greenText : null, bold: r.doubles > 0),
+                        cell(e.dayRate > 0 ? fmtDa(e.dayRate) : '—', color: e.dayRate > 0 ? null : AppColors.redText),
+                        cell(r.suggestedDeduction > 0 ? '− ${fmtDa(r.suggestedDeduction)}' : '0',
+                            color: r.suggestedDeduction > 0 ? AppColors.redText : null),
+                        cell(r.suggestedBonus > 0 ? '+ ${fmtDa(r.suggestedBonus)}' : '0',
+                            color: r.suggestedBonus > 0 ? AppColors.greenText : null),
                       ]),
                     );
                   }),
@@ -220,64 +184,14 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          Text(
-            'Jours de fermeture ce mois : ${AttendanceRepo.recap(staff.first, mk).closedDays}. '
-            'Les primes (doubles) et retenues (absences) se valident dans Dépenses › Employés, au moment de la paie.',
-            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          const Text(
+            'La retenue et la prime se valident dans Dépenses › Employés, au moment de la paie. '
+            'Prix de la journée : sur la fiche de chaque employé.',
+            style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
           ),
         ],
       ),
     );
-  }
-
-  Future<void> _closeDay() async {
-    final reason = await askText(context, 'Fast-food fermé le ${fmtDate(_day)}', hint: 'Raison (facultatif) : fête, travaux…', ok: 'Marquer fermé');
-    if (reason == null || !mounted) return;
-    AttendanceRepo.setClosed(_uid, _key, true, reason: reason);
-    setState(() {});
-  }
-
-  Future<void> _weeklyDialog() async {
-    const names = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
-    final sel = {...AttendanceRepo.weeklyClosed};
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (c) => StatefulBuilder(
-        builder: (c, setD) => AlertDialog(
-          title: const Text('Fermé chaque semaine'),
-          content: SizedBox(
-            width: 380,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text(
-                  'Cochez les jours où le fast-food ne travaille jamais. Ces jours ne comptent pas comme absence. '
-                  'Pour une fermeture exceptionnelle (fête…), utilisez « Fast-food fermé ce jour ».',
-                  style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
-                ),
-                const SizedBox(height: 8),
-                for (var i = 0; i < 7; i++)
-                  CheckboxListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(names[i]),
-                    value: sel.contains(i + 1),
-                    onChanged: (v) => setD(() => v == true ? sel.add(i + 1) : sel.remove(i + 1)),
-                  ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Retour')),
-            FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Enregistrer')),
-          ],
-        ),
-      ),
-    );
-    if (ok != true || !mounted) return;
-    AttendanceRepo.setWeeklyClosed(_uid, sel);
-    setState(() {});
   }
 }
 
@@ -290,9 +204,7 @@ class _KindPicker extends StatelessWidget {
   static const _colors = {
     AttKind.absent: (AppColors.redSoft, AppColors.redText),
     AttKind.demi: (AppColors.yellowSoft, AppColors.text),
-    AttKind.journee: (AppColors.greenSoft, AppColors.greenText),
     AttKind.double_: (AppColors.greenText, Colors.white),
-    AttKind.repos: (Color(0xFFE8E8ED), AppColors.text),
   };
 
   @override

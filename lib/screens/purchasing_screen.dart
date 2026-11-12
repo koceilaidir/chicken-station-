@@ -4,11 +4,13 @@ import '../data/models.dart';
 import '../data/attendance.dart';
 import '../data/purchasing.dart';
 import '../data/repos.dart';
+import '../data/settings.dart';
 import '../data/stock.dart';
 import '../state/session.dart';
 import '../ui/format.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
+import 'day_dialogs.dart';
 import 'stock_screen.dart';
 
 /// Montant + source (coffre / caisse) + note. Renvoie null si annulé.
@@ -18,7 +20,7 @@ Future<({int amount, String source, String note})?> askPayment(
   int? suggested,
   String hint = 'Montant en DA',
   bool withSource = true,
-  String sourceDefault = 'coffre',
+  String sourceDefault = 'caisse',
 }) {
   final amount = TextEditingController(text: suggested == null || suggested <= 0 ? '' : '$suggested');
   final note = TextEditingController();
@@ -26,7 +28,7 @@ Future<({int amount, String source, String note})?> askPayment(
   return showDialog<({int amount, String source, String note})>(
     context: context,
     builder: (c) => StatefulBuilder(
-      builder: (c, setD) => AlertDialog(
+      builder: (c, setD) => AlertDialog(scrollable: true, 
         title: Text(title),
         content: SizedBox(
           width: 440,
@@ -38,7 +40,7 @@ Future<({int amount, String source, String note})?> askPayment(
               if (withSource) ...[
                 const SizedBox(height: 12),
                 IosSegmented<String>(
-                  values: const ['coffre', 'caisse'],
+                  values: const ['caisse', 'coffre'],
                   selected: source,
                   label: (v) => v == 'coffre' ? 'Payé depuis le coffre' : 'Payé depuis la caisse',
                   onChanged: (v) => setD(() => source = v),
@@ -53,10 +55,12 @@ Future<({int amount, String source, String note})?> askPayment(
           TextButton(onPressed: () => Navigator.pop(c), child: const Text('Retour')),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: AppColors.yellow, foregroundColor: AppColors.text),
-            onPressed: () {
+            onPressed: () async {
               final v = parseAmount(amount.text);
               if (v == null || v <= 0) return;
-              Navigator.pop(c, (amount: v, source: source, note: note.text.trim()));
+              final src = withSource ? await ensureCashOpen(c, source) : source;
+              if (src == null || !c.mounted) return;
+              Navigator.pop(c, (amount: v, source: src, note: note.text.trim()));
             },
             child: const Text('Valider'),
           ),
@@ -64,6 +68,100 @@ Future<({int amount, String source, String note})?> askPayment(
       ),
     ),
   );
+}
+
+/// Début de mois : la paie du mois dernier est-elle réglée ?
+/// Oui → on enregistre le paiement du reste (le compteur revient à zéro).
+/// Pas encore → on garde ce qui est dû, et on redemande le lendemain.
+Future<void> remindUnpaidPayroll(BuildContext context) async {
+  if (!Session.I.can(Perm.paie)) return;
+  final today = DateTime.now();
+  final todayKey = '${today.year}-${today.month}-${today.day}';
+  if (Settings.get('payroll_reminder_snooze') == todayKey) return;
+  final prev = monthKey(DateTime(today.year, today.month - 1));
+  final due = <(Employee, int)>[];
+  final notValidated = <String>[];
+  for (final e in PayrollRepo.employees()) {
+    if (!e.worksIn(prev) || (e.trackedFrom.isNotEmpty && prev.compareTo(e.trackedFrom) < 0)) continue;
+    final rest = PayrollRepo.month(e, prev).remaining;
+    if (rest <= 0) continue;
+    due.add((e, rest));
+    final r = AttendanceRepo.recap(e, prev);
+    if (r.suggestedDeduction != PayrollRepo.fromAttendance(e.id, prev, 'retenue') ||
+        r.suggestedBonus != PayrollRepo.fromAttendance(e.id, prev, 'prime')) {
+      notValidated.add(e.name);
+    }
+  }
+  if (due.isEmpty || !context.mounted) return;
+  final total = due.fold<int>(0, (a, d) => a + d.$2);
+  final monthName = fmtMonth(DateTime(today.year, today.month - 1));
+  var source = 'caisse';
+  final answer = await showDialog<String>(
+    context: context,
+    barrierDismissible: false,
+    builder: (c) => StatefulBuilder(
+      builder: (c, setD) => AlertDialog(scrollable: true, 
+        title: Text('Paie de $monthName'),
+        content: SizedBox(
+          width: 460,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('Avez-vous payé vos employés ? Il reste à payer :'),
+              const SizedBox(height: 8),
+              for (final d in due) KeyValueRow(d.$1.name, fmtDa(d.$2), bold: true),
+              KeyValueRow('Total', fmtDa(total), bold: true, valueColor: AppColors.redText),
+              if (notValidated.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Pointage pas encore validé pour ${notValidated.join(', ')} : '
+                  'validez-le d\'abord dans Dépenses › Employés si vous voulez compter absences et doubles.',
+                  style: const TextStyle(fontSize: 12, color: AppColors.redText, fontWeight: FontWeight.w600),
+                ),
+              ],
+              const SizedBox(height: 12),
+              const Text('Si oui, l\'argent est sorti de :', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+              const SizedBox(height: 4),
+              IosSegmented<String>(
+                values: const ['caisse', 'coffre'],
+                selected: source,
+                label: (v) => v == 'caisse' ? 'La caisse' : 'Le coffre',
+                onChanged: (v) => setD(() => source = v),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, 'later'), child: const Text('Pas encore payé')),
+          FilledButton(onPressed: () => Navigator.pop(c, 'paid'), child: const Text('Oui, tout est payé')),
+        ],
+      ),
+    ),
+  );
+  if (answer != 'paid') {
+    Settings.set('payroll_reminder_snooze', todayKey);
+    return;
+  }
+  if (!context.mounted) return;
+  final src = await ensureCashOpen(context, source);
+  if (src == null || !context.mounted) return;
+  try {
+    for (final d in due) {
+      PayrollRepo.record(
+        userId: Session.I.user!.id,
+        employee: d.$1,
+        kind: 'salaire',
+        amount: d.$2,
+        month: prev,
+        source: src,
+        note: 'paie de $monthName soldée',
+      );
+    }
+    if (context.mounted) toast(context, 'Paie de $monthName soldée : ${fmtDa(total)}.');
+  } catch (e) {
+    if (context.mounted) toast(context, e is StateError ? e.message : '$e', error: true);
+  }
 }
 
 String _monthOffset(int delta) {
@@ -262,12 +360,7 @@ class _PurchasingScreenState extends State<PurchasingScreen> {
           const SizedBox(height: 6),
           SecondaryButton(
             label: '+ Nouveau fournisseur',
-            onPressed: () async {
-              final name = await askText(context, 'Nouveau fournisseur', hint: 'Nom');
-              if (name == null || name.isEmpty) return;
-              final id = SupplierRepo.add(_uid, name, '');
-              setState(() => _supplierId = id);
-            },
+            onPressed: () => _editSupplier(null),
           ),
         ],
       ),
@@ -356,7 +449,14 @@ class _PurchasingScreenState extends State<PurchasingScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(s.name, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
-                    Text(s.phone.isEmpty ? 'Pas de téléphone' : s.phone, style: const TextStyle(color: AppColors.textSecondary)),
+                    Wrap(
+                      spacing: 14,
+                      children: [
+                        _contact(Icons.phone_outlined, s.phone.isEmpty ? 'Pas de téléphone' : s.phone),
+                        if (s.product.isNotEmpty) _contact(Icons.inventory_2_outlined, s.product),
+                        if (s.note.isNotEmpty) _contact(Icons.notes_outlined, s.note),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -382,7 +482,7 @@ class _PurchasingScreenState extends State<PurchasingScreen> {
                 SecondaryButton(
                   label: "+ Bon d'achat",
                   onPressed: () async {
-                    final ok = await showDialog<bool>(context: context, builder: (_) => ReceptionDialog(supplierId: s.id));
+                    final ok = await showDialog<bool>(context: context, builder: (_) => ReceptionDialog(supplier: s));
                     if (ok == true && mounted) setState(() {});
                   },
                 ),
@@ -431,7 +531,7 @@ class _PurchasingScreenState extends State<PurchasingScreen> {
     final note = TextEditingController();
     final ok = await showDialog<bool>(
       context: context,
-      builder: (c) => AlertDialog(
+      builder: (c) => AlertDialog(scrollable: true, 
         title: Text("Crédit d'avant l'appli · ${s.name}"),
         content: SizedBox(
           width: 420,
@@ -467,33 +567,51 @@ class _PurchasingScreenState extends State<PurchasingScreen> {
         "Crédit ajouté : ${s.name} attend maintenant ${fmtDa(s.debt + v)}.");
   }
 
-  Future<void> _editSupplier(Supplier s) async {
-    final name = TextEditingController(text: s.name);
-    final phone = TextEditingController(text: s.phone);
-    final note = TextEditingController(text: s.note);
-    var active = s.active;
+  Widget _contact(IconData icon, String text) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: AppColors.textSecondary),
+          const SizedBox(width: 4),
+          Text(text, style: const TextStyle(color: AppColors.textSecondary)),
+        ],
+      );
+
+  /// Fiche contact d'un fournisseur : nom, téléphone, ce qu'il livre d'habitude, note.
+  Future<void> _editSupplier(Supplier? s) async {
+    final name = TextEditingController(text: s?.name ?? '');
+    final phone = TextEditingController(text: s?.phone ?? '');
+    final product = TextEditingController(text: s?.product ?? '');
+    final note = TextEditingController(text: s?.note ?? '');
+    var active = s?.active ?? true;
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => StatefulBuilder(
-        builder: (c, setD) => AlertDialog(
-          title: const Text('Fournisseur'),
+        builder: (c, setD) => AlertDialog(scrollable: true, 
+          title: Text(s == null ? 'Nouveau fournisseur' : 'Fiche de ${s.name}'),
           content: SizedBox(
-            width: 420,
+            width: 440,
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                FieldBox(controller: name, hint: 'Nom'),
+                FieldBox(controller: name, hint: 'Nom (ex. Khalil)', autofocus: s == null),
                 const SizedBox(height: 10),
-                FieldBox(controller: phone, hint: 'Téléphone'),
+                FieldBox(controller: phone, hint: 'Téléphone', numeric: true),
                 const SizedBox(height: 10),
-                FieldBox(controller: note, hint: 'Note (produits, jours de livraison…)'),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  value: active,
-                  activeTrackColor: AppColors.green,
-                  onChanged: (v) => setD(() => active = v),
-                  title: const Text('Actif'),
-                ),
+                FieldBox(controller: product, hint: 'Ce qu\'il livre (ex. Viande)'),
+                const SizedBox(height: 4),
+                const Text('Proposé sur chaque nouveau bon, modifiable.',
+                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                const SizedBox(height: 10),
+                FieldBox(controller: note, hint: 'Note (jours de livraison…) facultatif'),
+                if (s != null)
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: active,
+                    activeTrackColor: AppColors.green,
+                    onChanged: (v) => setD(() => active = v),
+                    title: const Text('Actif'),
+                  ),
               ],
             ),
           ),
@@ -501,13 +619,22 @@ class _PurchasingScreenState extends State<PurchasingScreen> {
             TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Retour')),
             FilledButton(
               onPressed: () {
-                if (name.text.trim().isEmpty) return;
-                s
-                  ..name = name.text.trim()
-                  ..phone = phone.text.trim()
-                  ..note = note.text.trim()
-                  ..active = active;
-                SupplierRepo.save(_uid, s);
+                if (name.text.trim().isEmpty) {
+                  toast(c, 'Tapez le nom du fournisseur.', error: true);
+                  return;
+                }
+                if (s == null) {
+                  _supplierId = SupplierRepo.add(_uid, name.text.trim(), phone.text.trim(),
+                      product: product.text.trim(), note: note.text.trim());
+                } else {
+                  s
+                    ..name = name.text.trim()
+                    ..phone = phone.text.trim()
+                    ..product = product.text.trim()
+                    ..note = note.text.trim()
+                    ..active = active;
+                  SupplierRepo.save(_uid, s);
+                }
                 Navigator.pop(c, true);
               },
               child: const Text('Enregistrer'),
@@ -518,6 +645,7 @@ class _PurchasingScreenState extends State<PurchasingScreen> {
     );
     if (ok == true && mounted) setState(() {});
   }
+
 
   // ========================================================================== employés
 
@@ -693,51 +821,49 @@ class _PurchasingScreenState extends State<PurchasingScreen> {
     );
   }
 
-  /// Bilan du pointage du mois et passage en prime (doubles) ou retenue (absences), toujours sur décision.
+  /// Bilan du pointage du mois (absences, demis, doubles au prix de la journée), validé à la main.
   Widget _attendanceCard(Employee e, String mk, PayMonth m) {
     final r = AttendanceRepo.recap(e, mk);
     final bonusApplied = PayrollRepo.fromAttendance(e.id, mk, 'prime');
     final dedApplied = PayrollRepo.fromAttendance(e.id, mk, 'retenue');
-    String days(num n) => n == n.truncate() ? '${n.toInt()}' : n.toString().replaceAll('.', ',');
-    Widget action(String kind, int suggested, int applied, String what) {
-      if (suggested == applied) {
-        return suggested == 0
-            ? const SizedBox.shrink()
-            : Text('✓ ${kind == 'prime' ? 'Prime' : 'Retenue'} de ${fmtDa(applied)} déjà comptée',
-                style: const TextStyle(color: AppColors.greenText, fontWeight: FontWeight.w600));
-      }
-      final label = applied == 0
-          ? '${kind == 'prime' ? 'Ajouter en prime' : 'Retenir'} · ${fmtDa(suggested)}'
-          : 'Mettre à jour · ${fmtDa(applied)} → ${fmtDa(suggested)}';
-      return SecondaryButton(
-        label: label,
-        onPressed: () async {
-          final ok = await confirm(
-            context,
-            kind == 'prime' ? 'Prime pour doubles journées ?' : 'Retenue pour absences ?',
-            '$what × ${fmtDa(r.dayValue)} (salaire ${fmtDa(r.salary)} ÷ ${r.openDaysWholeMonth} jours d\'ouverture) = ${fmtDa(suggested)}.\n'
-                '${kind == 'prime' ? 'Ajouté à ce qui lui est dû' : 'Retiré de ce qui lui est dû'} pour ${fmtMonth(_month)}. '
-                'Aucun argent ne sort maintenant.',
-            ok: 'Valider',
-          );
-          if (!ok || !mounted) return;
-          _guard(
-            () => PayrollRepo.setFromAttendance(
-              userId: _uid,
-              employee: e,
-              month: mk,
-              kind: kind,
-              amount: suggested,
-              note: '$what × ${fmtDa(r.dayValue)}',
-            ),
-            suggested == 0 ? 'Ligne du pointage retirée.' : '${kind == 'prime' ? 'Prime' : 'Retenue'} de ${fmtDa(suggested)} enregistrée.',
-          );
-        },
+    final needDed = r.suggestedDeduction != dedApplied;
+    final needBonus = r.suggestedBonus != bonusApplied;
+    final parts = <String>[
+      if (r.absent > 0) '${r.absent} absence(s)',
+      if (r.demi > 0) '${r.demi} demi-journée(s)',
+      if (r.doubles > 0) '${r.doubles} double(s)',
+    ];
+    Future<void> validate() async {
+      final ok = await confirm(
+        context,
+        'Valider le pointage de ${fmtMonth(_month)} ?',
+        [
+          if (r.suggestedDeduction > 0 || dedApplied > 0)
+            'Retenue : ${r.absent} absence(s) × ${fmtDa(e.dayRate)} + ${r.demi} demi × ${fmtDa((e.dayRate / 2).round())} = ${fmtDa(r.suggestedDeduction)}',
+          if (r.suggestedBonus > 0 || bonusApplied > 0)
+            'Prime : ${r.doubles} double(s) × ${fmtDa(e.dayRate)} = ${fmtDa(r.suggestedBonus)}',
+          'Reste à lui payer après : ${fmtDa(m.remaining + (dedApplied - r.suggestedDeduction) + (r.suggestedBonus - bonusApplied))}.',
+          'Aucun argent ne sort maintenant.',
+        ].join('\n'),
+        ok: 'Valider',
       );
+      if (!ok || !mounted) return;
+      _guard(() {
+        if (needDed) {
+          PayrollRepo.setFromAttendance(
+            userId: _uid, employee: e, month: mk, kind: 'retenue', amount: r.suggestedDeduction,
+            note: '${r.absent} absence(s), ${r.demi} demi × ${fmtDa(e.dayRate)}',
+          );
+        }
+        if (needBonus) {
+          PayrollRepo.setFromAttendance(
+            userId: _uid, employee: e, month: mk, kind: 'prime', amount: r.suggestedBonus,
+            note: '${r.doubles} double(s) × ${fmtDa(e.dayRate)}',
+          );
+        }
+      }, 'Pointage validé.');
     }
 
-    final doublesTxt = '${r.doubles} double(s) journée(s)';
-    final missedTxt = '${days(r.missedDays)} jour(s) manqué(s)';
     return Container(
       margin: const EdgeInsets.only(top: 12),
       padding: const EdgeInsets.all(12),
@@ -747,38 +873,27 @@ class _PurchasingScreenState extends State<PurchasingScreen> {
         children: [
           SectionLabel('Pointage de ${fmtMonth(_month)}'),
           const SizedBox(height: 4),
+          Text(parts.isEmpty ? 'Ni absence, ni demi, ni double : mois complet.' : parts.join(' · '),
+              style: const TextStyle(fontWeight: FontWeight.w600)),
           Text(
-            '${r.journee} journée(s) · ${r.demi} demi · ${r.doubles} double(s) · ${r.repos} repos · '
-            '${r.absent} absence(s) · ${r.closedDays} jour(s) de fermeture',
-            style: const TextStyle(fontWeight: FontWeight.w600),
+            e.dayRate > 0
+                ? 'Prix de la journée : ${fmtDa(e.dayRate)} (modifiable sur sa fiche)'
+                : 'Prix de la journée pas indiqué : modifiez sa fiche pour calculer retenues et primes.',
+            style: TextStyle(fontSize: 12, color: e.dayRate > 0 ? AppColors.textSecondary : AppColors.redText),
           ),
-          Text(
-            'Valeur d\'une journée : ${fmtDa(r.salary)} ÷ ${r.openDaysWholeMonth} jours d\'ouverture = ${fmtDa(r.dayValue)}',
-            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-          ),
-          if (r.unmarked > 0)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                '${r.unmarked} jour(s) d\'ouverture pas encore pointé(s) : complétez le Pointage avant de payer. '
-                'Ils ne sont pas comptés comme absence.',
-                style: const TextStyle(color: AppColors.redText, fontWeight: FontWeight.w600),
-              ),
-            ),
+          if (r.suggestedDeduction > 0) Text('Retenue : − ${fmtDa(r.suggestedDeduction)}', style: const TextStyle(color: AppColors.redText)),
+          if (r.suggestedBonus > 0) Text('Prime doubles : + ${fmtDa(r.suggestedBonus)}', style: const TextStyle(color: AppColors.greenText)),
           const SizedBox(height: 8),
-          if (r.doubles > 0 || bonusApplied > 0) ...[
-            Text('Doubles journées : $doublesTxt → prime proposée ${fmtDa(r.suggestedBonus)}'),
-            const SizedBox(height: 4),
-            Align(alignment: Alignment.centerLeft, child: action('prime', r.suggestedBonus, bonusApplied, doublesTxt)),
-            const SizedBox(height: 8),
-          ],
-          if (r.missedDays > 0 || dedApplied > 0) ...[
-            Text('Absences : $missedTxt → retenue proposée ${fmtDa(r.suggestedDeduction)}'),
-            const SizedBox(height: 4),
-            Align(alignment: Alignment.centerLeft, child: action('retenue', r.suggestedDeduction, dedApplied, missedTxt)),
-          ],
-          if (r.doubles == 0 && r.missedDays == 0 && bonusApplied == 0 && dedApplied == 0)
-            const Text('Ni double journée ni absence ce mois.', style: TextStyle(color: AppColors.textSecondary)),
+          if (e.dayRate > 0 && (needDed || needBonus))
+            Align(
+              alignment: Alignment.centerLeft,
+              child: PrimaryButton(
+                label: dedApplied == 0 && bonusApplied == 0 ? 'Valider le pointage' : 'Mettre à jour le pointage',
+                onPressed: validate,
+              ),
+            )
+          else if (!r.isEmpty && e.dayRate > 0)
+            const Text('✓ Pointage déjà compté dans la paie', style: TextStyle(color: AppColors.greenText, fontWeight: FontWeight.w600)),
         ],
       ),
     );
@@ -824,6 +939,7 @@ class _PurchasingScreenState extends State<PurchasingScreen> {
     final job = TextEditingController(text: e?.job ?? '');
     final phone = TextEditingController(text: e?.phone ?? '');
     final salary = TextEditingController(text: e == null || e.salary == 0 ? '' : '${e.salary}');
+    final dayRate = TextEditingController(text: e == null || e.dayRate == 0 ? '' : '${e.dayRate}');
     var active = e?.active ?? true;
     var startMonth = _monthOffset(0);
     var salaryFrom = _monthOffset(0);
@@ -834,7 +950,7 @@ class _PurchasingScreenState extends State<PurchasingScreen> {
         builder: (c, setD) {
           final newSalary = parseAmount(salary.text) ?? 0;
           final salaryChanged = e != null && newSalary != e.salary;
-          return AlertDialog(
+          return AlertDialog(scrollable: true, 
             title: Text(e == null ? 'Nouvel employé' : 'Fiche de ${e.name}'),
             content: SizedBox(
               width: 460,
@@ -854,6 +970,17 @@ class _PurchasingScreenState extends State<PurchasingScreen> {
                       hint: 'Salaire mensuel en DA (obligatoire)',
                       numeric: true,
                       onChanged: (_) => setD(() {}),
+                    ),
+                    const SizedBox(height: 10),
+                    FieldBox(
+                      controller: dayRate,
+                      hint: newSalary > 0 ? 'Prix de la journée en DA (ex. ${fmtNum((newSalary / 30).round())})' : 'Prix de la journée en DA',
+                      numeric: true,
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Retiré pour une absence, ajouté pour une double journée, la moitié pour une demi.',
+                      style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
                     ),
                     if (e == null) ...[
                       const SizedBox(height: 12),
@@ -918,6 +1045,11 @@ class _PurchasingScreenState extends State<PurchasingScreen> {
                     toast(context, 'Indiquez le nom et le salaire mensuel.', error: true);
                     return;
                   }
+                  final rate = parseAmount(dayRate.text) ?? 0;
+                  if (rate <= 0) {
+                    toast(context, 'Indiquez le prix de la journée (ex. ${fmtNum((s / 30).round())} DA).', error: true);
+                    return;
+                  }
                   if (e == null) {
                     _employeeId = PayrollRepo.add(
                       _uid,
@@ -926,6 +1058,7 @@ class _PurchasingScreenState extends State<PurchasingScreen> {
                       s,
                       phone: phone.text.trim(),
                       startMonth: startMonth,
+                      dayRate: rate,
                     );
                   } else {
                     e
@@ -933,6 +1066,7 @@ class _PurchasingScreenState extends State<PurchasingScreen> {
                       ..job = job.text.trim()
                       ..phone = phone.text.trim()
                       ..salary = s
+                      ..dayRate = rate
                       ..active = active;
                     PayrollRepo.save(_uid, e, salaryFrom: salaryFrom, endMonth: endMonth);
                   }

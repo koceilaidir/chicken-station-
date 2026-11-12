@@ -138,10 +138,14 @@ class MenuRepo {
       if (changes.isNotEmpty) logActivity('famille_modifiee', '${now['name']} · ${changes.join(', ')}');
     });
     _db.execute(
-      'UPDATE families SET name = ?, rank = ?, photo = ?, active = ? WHERE id = ?',
-      [f.name, f.rank, f.photo, f.active ? 1 : 0, f.id],
+      'UPDATE families SET name = ?, rank = ?, photo = ?, active = ?, kitchen = ? WHERE id = ?',
+      [f.name, f.rank, f.photo, f.active ? 1 : 0, f.kitchen ? 1 : 0, f.id],
     );
   }
+
+  /// Familles dont les produits partent en cuisine.
+  static Set<int> kitchenFamilies() =>
+      {for (final r in _db.select('SELECT id FROM families WHERE kitchen = 1')) r['id'] as int};
 
   static int addProduct(int familyId, String name, int price, String? photo) {
     final rank = (_db.select(
@@ -328,6 +332,93 @@ class DayRepo {
     AppDb.I.audit(userId, 'cloture_journee',
         'Compté ${fmtDa(counted)} · attendu ${fmtDa(expected)} · écart ${fmtSigned(diff)} DA · emporté ${fmtDa(takenHome)}');
     return byId(day.id)!;
+  }
+
+  /// Journée de rattrapage (panne de PC, travail sur papier) : enregistrée d'un coup, déjà clôturée.
+  /// Recette en espèces = argent compté le soir − fond du matin + dépenses payées avec la caisse.
+  /// Les tickets sont créés sans détail de produits, juste pour garder leur nombre et la recette.
+  static Day catchUp({
+    required int userId,
+    required DateTime date,
+    required int fund,
+    required int tickets,
+    required int counted,
+    int card = 0,
+    required List<({String label, int amount})> expenses,
+    required int takenHome,
+  }) {
+    final dayKey = DateTime(date.year, date.month, date.day);
+    final today = DateTime.now();
+    if (!dayKey.isBefore(DateTime(today.year, today.month, today.day))) {
+      throw StateError('Choisissez un jour passé.');
+    }
+    final next = dayKey.add(const Duration(days: 1));
+    final exists = _db.select('SELECT 1 FROM days WHERE opened_at >= ? AND opened_at < ? LIMIT 1',
+        [dayKey.toIso8601String(), next.toIso8601String()]);
+    if (exists.isNotEmpty) throw StateError('Une journée existe déjà le ${fmtDate(dayKey)}.');
+    final exp = expenses.fold<int>(0, (a, e) => a + e.amount);
+    final cash = counted - fund + exp;
+    if (cash < 0) {
+      throw StateError("L'argent du soir (${fmtDa(counted)}) est plus petit que le fond moins les dépenses : vérifiez les chiffres.");
+    }
+    if (tickets <= 0 && (cash > 0 || card > 0)) throw StateError('Indiquez le nombre de tickets.');
+    if (takenHome < 0 || takenHome > counted) throw StateError('Le montant emporté doit être entre 0 et ${fmtDa(counted)}.');
+    final opened = DateTime(dayKey.year, dayKey.month, dayKey.day, 9).toIso8601String();
+    final mid = DateTime(dayKey.year, dayKey.month, dayKey.day, 14).toIso8601String();
+    final closed = DateTime(dayKey.year, dayKey.month, dayKey.day, 23).toIso8601String();
+    _db.execute('BEGIN');
+    try {
+      _db.execute(
+        'INSERT INTO days (opened_at, opened_by, opening_fund, closed_at, closed_by, counted, expected, diff, reason, taken_home) '
+        'VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)',
+        [opened, userId, fund, closed, userId, counted, counted, 'Journée rattrapée (saisie après coup)', takenHome],
+      );
+      final id = _db.lastInsertRowId;
+      if (fund > 0) {
+        _db.execute('INSERT INTO safe_moves (created_at, user_id, label, amount, kind, day_id) VALUES (?, ?, ?, ?, ?, ?)',
+            [opened, userId, 'Fond de caisse ramené au resto', -fund, 'fond', id]);
+      }
+      // Tickets : la recette répartie, le TPE sur un ticket à part.
+      final cardTickets = card > 0 ? 1 : 0;
+      final cashTickets = tickets - cardTickets > 0 ? tickets - cardTickets : (cash > 0 ? 1 : 0);
+      var number = 0;
+      for (var i = 0; i < cashTickets; i++) {
+        final share = cash ~/ cashTickets + (i == 0 ? cash % cashTickets : 0);
+        _db.execute(
+          'INSERT INTO sales (day_id, number, created_at, user_id, mode, payment, total, cash_given, status) '
+          "VALUES (?, ?, ?, ?, 'Sur place', 'cash', ?, NULL, 'paid')",
+          [id, ++number, mid, userId, share],
+        );
+      }
+      if (card > 0) {
+        _db.execute(
+          'INSERT INTO sales (day_id, number, created_at, user_id, mode, payment, total, cash_given, status) '
+          "VALUES (?, ?, ?, ?, 'Sur place', 'card', ?, NULL, 'paid')",
+          [id, ++number, mid, userId, card],
+        );
+      }
+      for (final e in expenses) {
+        _db.execute(
+          'INSERT INTO expenses (day_id, created_at, user_id, label, category, amount, source) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          [id, mid, userId, e.label, 'Divers', e.amount, 'caisse'],
+        );
+      }
+      if (takenHome > 0) {
+        _db.execute('INSERT INTO safe_moves (created_at, user_id, label, amount, kind, day_id) VALUES (?, ?, ?, ?, ?, ?)',
+            [closed, userId, 'Emporté à la clôture', takenHome, 'cloture', id]);
+      }
+      _db.execute('COMMIT');
+      AppDb.I.audit(
+        userId,
+        'cloture_journee',
+        'Journée rattrapée du ${fmtDate(dayKey)} · fond ${fmtDa(fund)} · $tickets ticket(s) · recette ${fmtDa(cash + card)}'
+            ' · dépenses ${fmtDa(exp)} · compté ${fmtDa(counted)} · emporté ${fmtDa(takenHome)}',
+      );
+      return byId(id)!;
+    } catch (_) {
+      _db.execute('ROLLBACK');
+      rethrow;
+    }
   }
 
   /// Fond conseillé = monnaie de rendu + moyenne des dépenses en espèces
@@ -529,6 +620,16 @@ class ExpenseRepo {
         'SELECT e.*, u.name AS user_name FROM expenses e LEFT JOIN users u ON u.id = e.user_id '
         'WHERE e.day_id = ? ${withCancelled ? '' : 'AND e.cancelled = 0'} ORDER BY e.id DESC',
         [dayId],
+      )
+      .map(Expense.fromRow)
+      .toList();
+
+  /// Toutes les dépenses d'une période (salaires, fournisseurs, charges, divers…), les plus récentes d'abord.
+  static List<Expense> between(DateTime from, DateTime to, {bool withCancelled = true}) => _db
+      .select(
+        'SELECT e.*, u.name AS user_name FROM expenses e LEFT JOIN users u ON u.id = e.user_id '
+        'WHERE e.created_at >= ? AND e.created_at < ? ${withCancelled ? '' : 'AND e.cancelled = 0'} ORDER BY e.created_at DESC',
+        [from.toIso8601String(), to.toIso8601String()],
       )
       .map(Expense.fromRow)
       .toList();

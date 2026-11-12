@@ -10,6 +10,7 @@ import '../hardware/tickets.dart';
 import '../state/session.dart';
 import '../system/windows_shell.dart';
 import '../ui/theme.dart';
+import '../ui/touch_keyboard.dart';
 import '../ui/widgets.dart';
 import 'activity_screen.dart';
 import 'backup_screen.dart';
@@ -324,6 +325,22 @@ class _DisplaySettingsScreenState extends State<DisplaySettingsScreen> {
                 subtitle: const Text(
                     "L'appli occupe tout l'écran et cache la barre des tâches Windows. "
                     'Touche F11 pour basculer (réservée au gérant du matériel).'),
+              ),
+              const Divider(),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: TouchKeyboard.enabled,
+                activeTrackColor: AppColors.green,
+                onChanged: (v) {
+                  TouchKeyboard.enabled = v;
+                  TouchKeyboard.close();
+                  logActivity('reglages', v ? 'Clavier intégré activé' : 'Clavier intégré désactivé');
+                  setState(() {});
+                },
+                title: const Text('Clavier intégré (écran tactile)', style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: const Text(
+                    "Pour une caisse sans clavier : toucher un champ ouvre le clavier de l'appli en bas de l'écran, "
+                    "et le clavier de Windows ne s'ouvre plus tout seul. À laisser désactivé sur un PC avec clavier."),
               ),
               const Divider(),
               SwitchListTile(

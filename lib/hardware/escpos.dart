@@ -2,6 +2,46 @@ import 'dart:typed_data';
 
 enum PosAlign { left, center, right }
 
+/// Ce que contient le ticket, élément par élément : sert à le redessiner avec une vraie police
+/// (voir ticket_raster.dart). Les octets ESC/POS restent construits en parallèle.
+sealed class TicketItem {}
+
+class TicketText extends TicketItem {
+  TicketText(this.text, this.align, this.bold, this.sizeW, this.sizeH, {this.right});
+  final String text;
+  final String? right; // colonne de droite (prix…)
+  final PosAlign align;
+  final bool bold;
+  final int sizeW;
+  final int sizeH;
+}
+
+class TicketSeparator extends TicketItem {
+  TicketSeparator(this.ch);
+  final String ch;
+}
+
+class TicketImage extends TicketItem {
+  TicketImage(this.bits, this.widthBytes, this.height, this.align);
+  final Uint8List bits;
+  final int widthBytes;
+  final int height;
+  final PosAlign align;
+}
+
+class TicketFeed extends TicketItem {
+  TicketFeed(this.lines);
+  final int lines;
+}
+
+class TicketCut extends TicketItem {}
+
+/// Commande brute (ouverture du tiroir…) envoyée telle quelle.
+class TicketRaw extends TicketItem {
+  TicketRaw(this.bytes);
+  final List<int> bytes;
+}
+
 /// Pages de code proposées pour les accents français.
 /// Le numéro est celui envoyé à l'imprimante avec la commande ESC t n.
 class CodePage {
@@ -32,7 +72,13 @@ class EscPos {
   final BytesBuilder _b = BytesBuilder();
   int _codePage;
   int _sizeW = 1;
+  int _sizeH = 1;
+  bool _bold = false;
   PosAlign _align = PosAlign.left;
+  final StringBuffer _lineText = StringBuffer();
+
+  /// Contenu du ticket pour le rendu en image.
+  final List<TicketItem> items = [];
   final StringBuffer _pending = StringBuffer();
   final List<String> _preview = [];
 
@@ -52,6 +98,7 @@ class EscPos {
   }
 
   EscPos bold(bool on) {
+    _bold = on;
     _b.add([0x1B, 0x45, on ? 1 : 0]); // ESC E n
     return this;
   }
@@ -61,6 +108,7 @@ class EscPos {
     final ww = w.clamp(1, 8).toInt();
     final hh = h.clamp(1, 8).toInt();
     _sizeW = ww;
+    _sizeH = hh;
     _b.add([0x1D, 0x21, ((ww - 1) << 4) | (hh - 1)]); // GS ! n
     return this;
   }
@@ -68,6 +116,7 @@ class EscPos {
   EscPos text(String s) {
     _b.add(encode(s, _codePage));
     _pending.write(s);
+    _lineText.write(s);
     return this;
   }
 
@@ -75,6 +124,8 @@ class EscPos {
     text(s);
     _b.addByte(0x0A);
     _flushPreview();
+    items.add(TicketText(_lineText.toString(), _align, _bold, _sizeW, _sizeH));
+    _lineText.clear();
     return this;
   }
 
@@ -104,7 +155,10 @@ class EscPos {
     if (l.length > space - 1) {
       l = l.substring(0, space - 1);
     }
-    return line(l.padRight(space) + right);
+    line(l.padRight(space) + right);
+    // Pour le rendu en image : deux colonnes (le texte complet à gauche, retour à la ligne si besoin).
+    items[items.length - 1] = TicketText(left, PosAlign.left, _bold, _sizeW, _sizeH, right: right);
+    return this;
   }
 
   /// Image noir et blanc (GS v 0) : [bits] = 1 bit par point, [widthBytes] octets par ligne.
@@ -115,20 +169,27 @@ class EscPos {
     _b.addByte(0x0A);
     _pending.write(label);
     _flushPreview();
+    items.add(TicketImage(bits, widthBytes, height, _align));
     return this;
   }
 
-  EscPos separator([String ch = '-']) => line(ch * (width ~/ _sizeW));
+  EscPos separator([String ch = '-']) {
+    line(ch * (width ~/ _sizeW));
+    items[items.length - 1] = TicketSeparator(ch);
+    return this;
+  }
 
   EscPos feed(int lines) {
     _b.add([0x1B, 0x64, lines.clamp(0, 255).toInt()]); // ESC d n
     if (lines > 0) _preview.add('');
+    items.add(TicketFeed(lines));
     return this;
   }
 
   /// Avance le papier puis coupe (coupe partielle).
   EscPos cut() {
     _b.add(const [0x1D, 0x56, 0x42, 0x00]); // GS V 66 0
+    items.add(TicketCut());
     _preview.add('- - - - - - - - - - - - (coupe) - - - - - - - - - - - -');
     return this;
   }
@@ -137,12 +198,14 @@ class EscPos {
   /// [pin] 0 = broche 2, 1 = broche 5.
   EscPos openDrawer({int pin = 0}) {
     _b.add([0x1B, 0x70, pin == 1 ? 1 : 0, 0x19, 0xFA]); // ESC p m t1 t2
+    items.add(TicketRaw([0x1B, 0x70, pin == 1 ? 1 : 0, 0x19, 0xFA]));
     _preview.add('[ ouverture du tiroir-caisse ]');
     return this;
   }
 
   EscPos raw(List<int> bytes) {
     _b.add(bytes);
+    items.add(TicketRaw(bytes));
     return this;
   }
 

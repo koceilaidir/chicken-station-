@@ -1,73 +1,51 @@
 import 'db.dart';
 import 'purchasing.dart';
-import 'settings.dart';
 import '../ui/format.dart';
 
-/// Pointage d'un employé pour une journée.
+/// Pointage d'un employé pour une journée : on ne pointe que les exceptions.
+/// Un jour sans pointage = journée normale (le salaire du mois la paie déjà).
 class AttKind {
-  static const journee = 'journee';
+  static const absent = 'absent';
   static const demi = 'demi';
   static const double_ = 'double';
-  static const repos = 'repos';
-  static const absent = 'absent';
 
-  /// Ordre d'affichage des boutons.
-  static const all = [absent, demi, journee, double_, repos];
+  /// Anciennes valeurs (versions 0.6.0) : comptées comme une journée normale.
+  static const journee = 'journee';
+  static const repos = 'repos';
+
+  /// Boutons proposés.
+  static const all = [absent, demi, double_];
 
   static const labels = {
     absent: 'Absent',
     demi: 'Demi',
-    journee: 'Journée',
     double_: 'Double',
+    journee: 'Journée',
     repos: 'Repos',
   };
 }
 
-/// Bilan du pointage d'un employé sur un mois.
+/// Bilan du pointage d'un employé sur un mois, au prix de sa journée.
 class AttRecap {
-  AttRecap({
-    required this.openDays,
-    required this.openDaysWholeMonth,
-    required this.closedDays,
-    required this.journee,
-    required this.demi,
-    required this.doubles,
-    required this.repos,
-    required this.absent,
-    required this.unmarked,
-    required this.salary,
-  });
+  AttRecap({required this.absent, required this.demi, required this.doubles, required this.dayRate});
 
-  /// Jours où le fast-food était ouvert (jusqu'à aujourd'hui pour le mois en cours), pendant son contrat.
-  final int openDays;
-
-  /// Jours ouverts sur tout le mois : sert à calculer la valeur d'une journée.
-  final int openDaysWholeMonth;
-  final int closedDays;
-  final int journee;
+  final int absent;
   final int demi;
   final int doubles;
-  final int repos;
-  final int absent;
 
-  /// Jours ouverts passés sans pointage : à compléter, jamais comptés comme absence.
-  final int unmarked;
-  final int salary;
-
-  /// Valeur d'une journée = salaire du mois ÷ jours d'ouverture du mois.
-  int get dayValue => openDaysWholeMonth <= 0 ? 0 : (salary / openDaysWholeMonth).round();
+  /// Prix d'une journée (fiche de l'employé).
+  final int dayRate;
 
   /// Journées manquées : une absence = 1, une demi-journée = 0,5.
   double get missedDays => absent + demi * 0.5;
 
-  /// Journées en plus : chaque double journée = 1 journée de plus.
-  int get extraDays => doubles;
+  /// Retenue : absences × journée + demis × demi-journée.
+  int get suggestedDeduction => absent * dayRate + demi * (dayRate / 2).round();
 
-  int get suggestedDeduction => (missedDays * dayValue).round();
-  int get suggestedBonus => extraDays * dayValue;
+  /// Prime : chaque double journée = une journée en plus.
+  int get suggestedBonus => doubles * dayRate;
 
-  /// Journées travaillées (demi = 0,5 ; double = 2).
-  double get workedDays => journee + demi * 0.5 + doubles * 2;
+  bool get isEmpty => absent == 0 && demi == 0 && doubles == 0;
 }
 
 class AttendanceRepo {
@@ -75,46 +53,11 @@ class AttendanceRepo {
 
   static DateTime parse(String day) => DateTime.parse(day);
 
-  // ---------------------------------------------------------------- jours de fermeture
-
-  /// Jours de la semaine où le fast-food est toujours fermé (1 = lundi … 7 = dimanche).
-  static Set<int> get weeklyClosed =>
-      Settings.get('weekly_closed').split(',').where((s) => s.isNotEmpty).map(int.parse).toSet();
-
-  static void setWeeklyClosed(int userId, Set<int> days) {
-    Settings.set('weekly_closed', (days.toList()..sort()).join(','));
-    const names = ['', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
-    AppDb.I.audit(userId, 'pointage',
-        'Fermeture chaque semaine : ${days.isEmpty ? 'aucune' : (days.toList()..sort()).map((d) => names[d]).join(', ')}');
-  }
-
-  /// Raison de la fermeture ce jour-là, ou null si le fast-food était ouvert.
-  static String? closedReason(String day) {
-    final r = AppDb.I.db.select('SELECT reason FROM closed_days WHERE day = ?', [day]);
-    if (r.isNotEmpty) {
-      final reason = r.first['reason'] as String;
-      return reason.isEmpty ? 'Fermé' : reason;
-    }
-    if (weeklyClosed.contains(parse(day).weekday)) return 'Fermé chaque semaine';
-    return null;
-  }
-
-  static bool isClosed(String day) => closedReason(day) != null;
-
-  /// Marque un jour précis comme fermé (fête, travaux…) ou le rouvre.
-  static void setClosed(int userId, String day, bool closed, {String reason = ''}) {
-    if (closed) {
-      AppDb.I.db.execute(
-        'INSERT OR REPLACE INTO closed_days (day, reason, user_id, created_at) VALUES (?, ?, ?, ?)',
-        [day, reason, userId, DateTime.now().toIso8601String()],
-      );
-    } else {
-      AppDb.I.db.execute('DELETE FROM closed_days WHERE day = ?', [day]);
-    }
-    AppDb.I.audit(userId, 'pointage', '${fmtDate(parse(day))} : ${closed ? 'fermé${reason.isEmpty ? '' : ' ($reason)'}' : 'ouvert'}');
-  }
-
   // ---------------------------------------------------------------- pointage
+
+  /// La caisse a-t-elle été ouverte ce jour-là ?
+  static bool shopOpened(String day) =>
+      AppDb.I.db.select('SELECT 1 FROM days WHERE substr(opened_at, 1, 10) = ? LIMIT 1', [day]).isNotEmpty;
 
   /// Pointage du jour : employé → type.
   static Map<int, String> forDay(String day) => {
@@ -148,42 +91,15 @@ class AttendanceRepo {
           r['day'] as String: r['kind'] as String,
       };
 
-  /// Bilan du mois. Les jours fermés ne comptent jamais comme absence ; les jours non pointés non plus.
-  static AttRecap recap(Employee e, String monthKey, {DateTime? today}) {
-    final now = today ?? DateTime.now();
-    final y = int.parse(monthKey.substring(0, 4));
-    final m = int.parse(monthKey.substring(5, 7));
-    final days = DateTime(y, m + 1, 0).day;
-    final marks = month(e.id, monthKey);
-    var openWhole = 0, open = 0, closed = 0, unmarked = 0;
-    final count = <String, int>{for (final k in AttKind.all) k: 0};
-    final todayKey = key(now);
-    for (var d = 1; d <= days; d++) {
-      final dk = key(DateTime(y, m, d));
-      final isClosed = AttendanceRepo.isClosed(dk);
-      if (isClosed) {
-        closed++;
-      } else {
-        openWhole++;
-      }
-      if (!e.worksIn(monthKey)) continue;
-      final kind = marks[dk];
-      if (kind != null) count[kind] = count[kind]! + 1;
-      if (isClosed || dk.compareTo(todayKey) > 0) continue;
-      open++;
-      if (kind == null) unmarked++;
-    }
+  /// Bilan du mois : seules les absences, demis et doubles comptent.
+  static AttRecap recap(Employee e, String monthKey) {
+    final marks = month(e.id, monthKey).values;
+    int n(String k) => marks.where((m) => m == k).length;
     return AttRecap(
-      openDays: open,
-      openDaysWholeMonth: openWhole,
-      closedDays: closed,
-      journee: count[AttKind.journee]!,
-      demi: count[AttKind.demi]!,
-      doubles: count[AttKind.double_]!,
-      repos: count[AttKind.repos]!,
-      absent: count[AttKind.absent]!,
-      unmarked: unmarked,
-      salary: PayrollRepo.month(e, monthKey).salary,
+      absent: n(AttKind.absent),
+      demi: n(AttKind.demi),
+      doubles: n(AttKind.double_),
+      dayRate: e.dayRate,
     );
   }
 }

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../data/db.dart';
 import '../data/models.dart';
 import '../data/repos.dart';
+import '../ui/touch_keyboard.dart';
 import '../ui/format.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
@@ -370,6 +371,15 @@ class _MenuAdminScreenState extends State<MenuAdminScreen> {
                 child: TextField(
                   controller: _famName,
                   enabled: f != null,
+                  readOnly: TouchKeyboard.enabled,
+                  showCursor: true,
+                  onTap: TouchKeyboard.enabled && f != null
+                      ? () => TouchKeyboard.open(_famName, onChanged: (v) {
+                            if (v.trim().isEmpty) return;
+                            f.name = v.trim();
+                            MenuRepo.saveFamily(f);
+                          }, onSubmitted: (_) => setState(() {}))
+                      : null,
                   style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
                   decoration: const InputDecoration(border: InputBorder.none, isDense: true, labelText: 'Nom de la famille'),
                   onChanged: (v) {
@@ -392,6 +402,21 @@ class _MenuAdminScreenState extends State<MenuAdminScreen> {
                         MenuRepo.saveFamily(f);
                         setState(() {});
                       },
+                    ),
+                    const SizedBox(width: 6),
+                    const Text('En cuisine', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                    Tooltip(
+                      message: 'Désactivé : ces produits ne sortent pas sur le bon cuisine (ex. boissons).',
+                      child: Switch(
+                        value: f.kitchen,
+                        activeTrackColor: AppColors.green,
+                        onChanged: (v) {
+                          f.kitchen = v;
+                          MenuRepo.saveFamily(f);
+                          logActivity('famille_modifiee', '${f.name} · ${v ? 'envoyée' : 'plus envoyée'} en cuisine');
+                          setState(() {});
+                        },
+                      ),
                     ),
                   ],
                 ),

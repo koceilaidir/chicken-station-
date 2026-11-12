@@ -1,7 +1,7 @@
 name: chicken_station
 description: "Chicken Station — caisse et gestion du fast-food. Developed by Minerva."
 publish_to: 'none'
-version: 0.6.0+9
+version: 0.7.0+11
 
 environment:
   sdk: '>=3.3.0 <4.0.0'

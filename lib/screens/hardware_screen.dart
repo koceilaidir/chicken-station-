@@ -9,6 +9,7 @@ import '../hardware/escpos.dart';
 import '../hardware/hardware_config.dart';
 import '../hardware/hardware_service.dart';
 import '../hardware/system_lists.dart';
+import '../ui/touch_keyboard.dart';
 import '../ui/theme.dart';
 
 class _Status {
@@ -248,6 +249,48 @@ class _HardwareScreenState extends State<HardwareScreen> {
   }
 
   Widget _simulationCard(HardwareConfig cfg) {
+    return Column(children: [_simulationRow(cfg), const SizedBox(height: 12), _fontCard(cfg)]);
+  }
+
+  /// Police des tickets : police lisible dessinée par l'appli, ou police intégrée de l'imprimante.
+  Widget _fontCard(HardwareConfig cfg) {
+    return IosCard(
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(color: AppColors.fill, borderRadius: BorderRadius.circular(12)),
+            child: const Icon(Icons.text_fields, color: AppColors.text),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Police lisible sur les tickets', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+                Text(
+                  "Tickets, bons cuisine et clôture imprimés avec une police claire sans empattement, plus espacée. "
+                  "Désactivez si une imprimante imprime mal ou trop lentement.",
+                  style: TextStyle(fontSize: 12.5, color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: cfg.prettyFont,
+            activeTrackColor: AppColors.green,
+            onChanged: (v) {
+              _update((c) => c.prettyFont = v);
+              _addLog(true, v ? 'Police lisible activée.' : "Police de l'imprimante.");
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _simulationRow(HardwareConfig cfg) {
     return IosCard(
       child: Row(
         children: [
@@ -773,6 +816,9 @@ class _TextBox extends StatelessWidget {
       child: TextField(
         controller: controller,
         onChanged: onChanged,
+        readOnly: TouchKeyboard.enabled,
+        showCursor: true,
+        onTap: TouchKeyboard.enabled ? () => TouchKeyboard.open(controller, onChanged: onChanged) : null,
         style: const TextStyle(fontSize: 14),
         decoration: InputDecoration(
           hintText: hint,

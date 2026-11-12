@@ -48,11 +48,22 @@ int _payOut({
 // ============================================================================ fournisseurs
 
 class Supplier {
-  Supplier({required this.id, required this.name, required this.phone, required this.note, required this.active, this.debt = 0});
+  Supplier({
+    required this.id,
+    required this.name,
+    required this.phone,
+    required this.note,
+    required this.active,
+    this.product = '',
+    this.debt = 0,
+  });
   final int id;
   String name;
   String phone;
   String note;
+
+  /// Ce qu'il livre d'habitude (ex. « Viande ») : proposé sur chaque nouveau bon.
+  String product;
   bool active;
 
   /// Reste à payer : réceptions − paiements (annulations exclues). Négatif = avance chez le fournisseur.
@@ -94,20 +105,21 @@ class SupplierRepo {
             phone: r['phone'] as String,
             note: r['note'] as String,
             active: (r['active'] as int) == 1,
+            product: (r['product'] as String?) ?? '',
             debt: r['debt'] as int,
           ))
       .toList();
 
-  static int add(int userId, String name, String phone) {
-    _db.execute("INSERT INTO suppliers (name, phone, note, active) VALUES (?, ?, '', 1)", [name, phone]);
+  static int add(int userId, String name, String phone, {String product = '', String note = ''}) {
+    _db.execute('INSERT INTO suppliers (name, phone, note, product, active) VALUES (?, ?, ?, ?, 1)', [name, phone, note, product]);
     final id = _db.lastInsertRowId;
-    AppDb.I.audit(userId, 'fournisseur', 'Ajouté : $name');
+    AppDb.I.audit(userId, 'fournisseur', 'Ajouté : $name${product.isEmpty ? '' : ' · $product'}');
     return id;
   }
 
   static void save(int userId, Supplier s) {
-    _db.execute('UPDATE suppliers SET name = ?, phone = ?, note = ?, active = ? WHERE id = ?',
-        [s.name, s.phone, s.note, s.active ? 1 : 0, s.id]);
+    _db.execute('UPDATE suppliers SET name = ?, phone = ?, note = ?, product = ?, active = ? WHERE id = ?',
+        [s.name, s.phone, s.note, s.product, s.active ? 1 : 0, s.id]);
     AppDb.I.audit(userId, 'fournisseur', 'Modifié : ${s.name}${s.active ? '' : ' (désactivé)'}');
   }
 
@@ -215,11 +227,15 @@ class Employee {
     required this.startMonth,
     required this.endMonth,
     this.trackedFrom = '',
+    this.dayRate = 0,
   });
   final int id;
   String name;
   String job;
   String phone;
+
+  /// Prix d'une journée (DA) : retiré pour une absence, ajouté pour une double, moitié pour une demi.
+  int dayRate;
 
   /// Salaire mensuel actuel (DA). Les mois passés gardent le salaire de l'époque (historique).
   int salary;
@@ -292,6 +308,7 @@ class PayrollRepo {
         startMonth: (r['start_month'] as String?) ?? '',
         endMonth: (r['end_month'] as String?) ?? '',
         trackedFrom: (r['tracked_from'] as String?) ?? '',
+        dayRate: (r['day_rate'] as int?) ?? 0,
       );
 
   static List<Employee> employees({bool onlyActive = false}) => _db
@@ -300,7 +317,8 @@ class PayrollRepo {
       .toList();
 
   /// Nouvel employé : salaire mensuel et mois d'arrivée.
-  static int add(int userId, String name, String job, int salary, {String phone = '', required String startMonth}) {
+  static int add(int userId, String name, String job, int salary,
+      {String phone = '', required String startMonth, int dayRate = 0}) {
     // Arrivé le mois dernier ou après : sa paie est suivie depuis son arrivée.
     // Arrivé avant : les mois passés ont été payés hors appli, le suivi commence ce mois-ci.
     final now = DateTime.now();
@@ -308,26 +326,27 @@ class PayrollRepo {
     final previous = monthKey(DateTime(now.year, now.month - 1));
     final tracked = startMonth.compareTo(previous) >= 0 ? startMonth : current;
     _db.execute(
-      'INSERT INTO employees (name, job, phone, salary, active, start_month, end_month, tracked_from) VALUES (?, ?, ?, ?, 1, ?, \'\', ?)',
-      [name, job, phone, salary, startMonth, tracked],
+      'INSERT INTO employees (name, job, phone, salary, active, start_month, end_month, tracked_from, day_rate) VALUES (?, ?, ?, ?, 1, ?, \'\', ?, ?)',
+      [name, job, phone, salary, startMonth, tracked, dayRate],
     );
     final id = _db.lastInsertRowId;
     _db.execute('INSERT OR REPLACE INTO employee_salaries (employee_id, from_month, amount) VALUES (?, ?, ?)', [id, startMonth, salary]);
-    AppDb.I.audit(userId, 'employe', 'Ajouté : $name · ${fmtDa(salary)} / mois · depuis $startMonth');
+    AppDb.I.audit(userId, 'employe', 'Ajouté : $name · ${fmtDa(salary)} / mois · journée ${fmtDa(dayRate)} · depuis $startMonth');
     return id;
   }
 
   /// Modifie la fiche. Si le salaire change, il s'applique à partir de [salaryFrom] (les mois d'avant gardent l'ancien).
   /// Un départ fixe le dernier mois travaillé à [endMonth].
   static void save(int userId, Employee e, {required String salaryFrom, String? endMonth}) {
-    final old = _db.select('SELECT salary, active FROM employees WHERE id = ?', [e.id]).first;
+    final old = _db.select('SELECT salary, active, day_rate FROM employees WHERE id = ?', [e.id]).first;
     if (!e.active && (old['active'] as int) == 1) e.endMonth = endMonth ?? e.endMonth;
     if (e.active) e.endMonth = '';
     _db.execute(
-      'UPDATE employees SET name = ?, job = ?, phone = ?, salary = ?, active = ?, end_month = ? WHERE id = ?',
-      [e.name, e.job, e.phone, e.salary, e.active ? 1 : 0, e.endMonth, e.id],
+      'UPDATE employees SET name = ?, job = ?, phone = ?, salary = ?, active = ?, end_month = ?, day_rate = ? WHERE id = ?',
+      [e.name, e.job, e.phone, e.salary, e.active ? 1 : 0, e.endMonth, e.dayRate, e.id],
     );
     final changes = <String>[];
+    if (old['day_rate'] != e.dayRate) changes.add('journée ${fmtNum(old['day_rate'] as int)} → ${fmtDa(e.dayRate)}');
     if (old['salary'] != e.salary) {
       _db.execute(
         'INSERT OR REPLACE INTO employee_salaries (employee_id, from_month, amount) VALUES (?, ?, ?)',
