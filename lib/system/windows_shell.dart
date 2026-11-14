@@ -6,6 +6,21 @@ import 'package:ffi/ffi.dart';
 /// Plein écran « kiosque » (la barre des tâches Windows est cachée) et démarrage avec Windows.
 /// Appels directs à user32.dll : pas de paquet supplémentaire, rien à modifier dans le lanceur.
 class WindowsShell {
+  /// Programmes de l'ancienne caisse (Optima / Front Cash) : OSDEV garde le port de l'écran client.
+  static const oldPosPrograms = ['OSDEV.exe', 'FrontCash.exe'];
+
+  /// Ferme l'ancienne caisse si elle tourne. Renvoie les programmes fermés.
+  static Future<List<String>> closeOldPos() async {
+    final closed = <String>[];
+    for (final exe in oldPosPrograms) {
+      try {
+        final r = await Process.run('taskkill', ['/F', '/IM', exe]);
+        if (r.exitCode == 0) closed.add(exe);
+      } catch (_) {}
+    }
+    return closed;
+  }
+
   static bool _fullscreen = false;
   static int _savedStyle = 0;
   static final _savedRect = <int>[0, 0, 0, 0];

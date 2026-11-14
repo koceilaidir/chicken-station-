@@ -239,6 +239,7 @@ class Tickets {
     required String reason,
     required String closedBy,
     required List<Expense> expenses,
+    int drawerOpenings = 0,
   }) {
     final diff = counted - s.expectedInDrawer;
     final fund = s.day.openingFund;
@@ -275,6 +276,7 @@ class Tickets {
       p.columns('Écart (attendu ${fmtNum(s.expectedInDrawer)})', fmtSigned(diff));
       if (reason.isNotEmpty) p.line('Motif : $reason');
     }
+    if (drawerOpenings > 0) p.columns('Tiroir ouvert sans vente', '$drawerOpenings fois');
     p
       ..columns('Emporté au coffre', fmtNum(takenHome))
       ..feed(1)

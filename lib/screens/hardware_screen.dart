@@ -9,6 +9,7 @@ import '../hardware/escpos.dart';
 import '../hardware/hardware_config.dart';
 import '../hardware/hardware_service.dart';
 import '../hardware/system_lists.dart';
+import '../system/windows_shell.dart';
 import '../ui/touch_keyboard.dart';
 import '../ui/theme.dart';
 
@@ -51,6 +52,11 @@ class _HardwareScreenState extends State<HardwareScreen> {
 
   bool _autoRunning = false;
   int? _autoCurrent;
+
+  /// Recherche de l'afficheur sur tous les ports : chaque essai affiche un nombre différent.
+  final _finder = <({String port, DisplayTrial trial, int shown})>[];
+  bool _finderRunning = false;
+  int? _finderCurrent;
 
   static const _bauds = [1200, 2400, 4800, 9600, 19200, 38400];
   static const _widths = [48, 42, 32];
@@ -178,6 +184,77 @@ class _HardwareScreenState extends State<HardwareScreen> {
         });
       }
     }
+  }
+
+  /// Essaie tous les ports COM et tous les réglages : il suffit de toucher le nombre vu sur l'afficheur.
+  Future<void> _findDisplay() async {
+    if (_finderRunning || _autoRunning) return;
+    setState(() {
+      _finderRunning = true;
+      _finder.clear();
+    });
+    try {
+      // L'ancienne caisse bloque souvent le port : on la ferme d'abord.
+      final closed = await WindowsShell.closeOldPos();
+      if (closed.isNotEmpty) _addLog(true, 'Ancienne caisse fermée : ${closed.join(', ')}.');
+      final ports = await SystemLists.comPorts();
+      if (ports.isEmpty) {
+        _addLog(false, "Aucun port COM sur ce PC : l'afficheur n'est pas reconnu par Windows (pilote ?).");
+        return;
+      }
+      final free = <String>[];
+      for (final p in ports) {
+        try {
+          await _svc.sendToDisplay(CustomerDisplay.clear(DisplayProtocol.led8), port: p, baud: 9600);
+          free.add(p);
+        } catch (e) {
+          _addLog(false, '$p : $e');
+        }
+      }
+      if (free.isEmpty) {
+        _addLog(false, 'Tous les ports sont occupés ou absents. Redémarrez le PC puis réessayez.');
+        return;
+      }
+      _addLog(true, 'Ports libres : ${free.join(', ')}. Regardez l\'afficheur et notez le nombre qui apparaît.');
+      for (var i = 0; i < free.length; i++) {
+        for (final t in DisplayTrial.all) {
+          if (!mounted) return;
+          final shown = (i + 1) * 10 + t.number;
+          setState(() {
+            _finder.add((port: free[i], trial: t, shown: shown));
+            _finderCurrent = shown;
+          });
+          try {
+            await _svc.sendToDisplay(
+              CustomerDisplay.frame(t.protocol, amount: '$shown.00', line2: 'ESSAI $shown'),
+              port: free[i],
+              baud: t.baud,
+              preview: '$shown.00',
+            );
+          } catch (_) {}
+          await Future<void>.delayed(const Duration(milliseconds: 2500));
+        }
+      }
+      _addLog(true, "Recherche terminée : touchez le nombre que vous avez vu sur l'afficheur.");
+    } finally {
+      if (mounted) {
+        setState(() {
+          _finderRunning = false;
+          _finderCurrent = null;
+        });
+      }
+    }
+  }
+
+  void _applyFound(({String port, DisplayTrial trial, int shown}) f) {
+    _update((c) {
+      c.displayPort = f.port;
+      c.displayProtocol = f.trial.protocol;
+      c.displayBaud = f.trial.baud;
+    });
+    _status['display'] = _Status(true, 'Afficheur trouvé : ${f.port}, ${f.trial.protocol.label}, ${f.trial.baud} bauds');
+    _addLog(true, 'Écran client réglé : ${f.port}, ${f.trial.protocol.label}, ${f.trial.baud} bauds.');
+    _svc.showAmount('0.00').catchError((_) {});
   }
 
   void _applyTrial(DisplayTrial t) {
@@ -603,6 +680,52 @@ class _HardwareScreenState extends State<HardwareScreen> {
               onPressed: _autoRunning || cfg.displayPort.isEmpty ? null : _autoDisplay,
             ),
           ],
+        ),
+        const SizedBox(height: 12),
+        // Recherche sur tous les ports : le plus simple quand on ne sait pas où est branché l'afficheur.
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(color: AppColors.yellowSoft, borderRadius: BorderRadius.circular(12)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      "Trouver l'afficheur tout seul : l'appli essaie chaque port et chaque réglage, "
+                      "un nombre différent à chaque fois. Touchez ensuite le nombre que vous avez vu.",
+                      style: TextStyle(fontSize: 13),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  PrimaryButton(
+                    label: _finderRunning ? 'Essai ${_finderCurrent ?? ''}…' : "Trouver l'afficheur",
+                    onPressed: _finderRunning ? null : _findDisplay,
+                  ),
+                ],
+              ),
+              if (_finder.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final f in _finder)
+                      Tooltip(
+                        message: '${f.port} · ${f.trial.protocol.label} · ${f.trial.baud} bauds',
+                        child: ActionChip(
+                          label: Text('${f.shown}.00'),
+                          backgroundColor: _finderCurrent == f.shown ? AppColors.yellow : Colors.white,
+                          side: BorderSide.none,
+                          onPressed: () => _applyFound(f),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ],
+          ),
         ),
         const SizedBox(height: 12),
         const SectionLabel("Essai automatique : quel nombre s'est affiché ?"),

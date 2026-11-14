@@ -27,6 +27,62 @@ class _PosScreenState extends State<PosScreen> {
   final List<CartLine> _cart = [];
   String _mode = 'Sur place';
   bool _kitchenSent = false;
+
+  /// Ce que la cuisine a déjà reçu pour la commande en attente reprise (produit + remarque → quantité).
+  Map<String, int>? _sentToKitchen;
+  Map<String, Product> _sentProducts = {};
+
+  /// L'écran client ne répond pas : on le dit une fois par session, sans bloquer la vente.
+  static bool _displayWarned = false;
+  void _displayError(Object e) {
+    if (_displayWarned || !mounted) return;
+    _displayWarned = true;
+    toast(context, "Écran client : $e Réglez-le dans Réglages › Matériel › Trouver l'afficheur.", error: true);
+  }
+
+  static String _key(CartLine l) => '${l.product.id}|${l.note}';
+
+  Map<String, int> _snapshot(List<CartLine> lines) {
+    final m = <String, int>{};
+    for (final l in lines) {
+      m[_key(l)] = (m[_key(l)] ?? 0) + l.qty;
+    }
+    return m;
+  }
+
+  /// Commande modifiée : la cuisine ne reçoit que ce qui a été ajouté (et ce qui est à enlever).
+  Future<void> _kitchenChanges({required int number, required String cashier, required List<CartLine> lines}) async {
+    final before = _sentToKitchen;
+    if (before == null) {
+      await _kitchen(number: number, mode: _mode, cashier: cashier, lines: lines, banner: 'COMMANDE MODIFIÉE');
+      return;
+    }
+    final now = _snapshot(lines);
+    final byKey = {for (final l in lines) _key(l): l};
+    final added = <CartLine>[];
+    for (final e in now.entries) {
+      final d = e.value - (before[e.key] ?? 0);
+      if (d > 0) added.add(CartLine(product: byKey[e.key]!.product, qty: d, note: byKey[e.key]!.note));
+    }
+    final removed = <CartLine>[];
+    final products = _sentProducts;
+    for (final e in before.entries) {
+      final d = e.value - (now[e.key] ?? 0);
+      final product = byKey[e.key]?.product ?? products[e.key];
+      if (d > 0 && product != null) {
+        final note = e.key.substring(e.key.indexOf('|') + 1);
+        removed.add(CartLine(product: product, qty: d, note: note.isEmpty ? 'À ENLEVER' : '$note · À ENLEVER'));
+      }
+    }
+    if (added.isEmpty && removed.isEmpty) return;
+    await _kitchen(
+      number: number,
+      mode: _mode,
+      cashier: cashier,
+      lines: [...added, ...removed],
+      banner: removed.isEmpty ? 'AJOUT' : 'COMMANDE MODIFIÉE',
+    );
+  }
   bool _busy = false;
 
   /// Commande en attente reprise dans le panier (null = nouvelle commande).
@@ -86,7 +142,7 @@ class _PosScreenState extends State<PosScreen> {
 
   void _cartChanged() {
     _kitchenSent = false;
-    _hw.showAmount(fmtDisplay(_total)).catchError((_) {});
+    _hw.showAmount(fmtDisplay(_total)).catchError(_displayError);
   }
 
   void _add(Product p) {
@@ -122,6 +178,7 @@ class _PosScreenState extends State<PosScreen> {
       _cart.clear();
       _kitchenSent = false;
       _pendingId = null;
+      _sentToKitchen = null;
       _pendingNumber = null;
     });
     _hw.clearDisplay().catchError((_) {});
@@ -151,6 +208,7 @@ class _PosScreenState extends State<PosScreen> {
     final lines = List<CartLine>.from(_cart);
     final wasPending = _pendingId != null;
     final mustPrint = !_kitchenSent;
+    final before = _sentToKitchen;
     final r = SaleRepo.hold(
       dayId: day.id,
       userId: user.id,
@@ -162,13 +220,12 @@ class _PosScreenState extends State<PosScreen> {
     String? error;
     if (mustPrint) {
       try {
-        await _kitchen(
-          number: r.number,
-          mode: _mode,
-          cashier: user.name,
-          lines: lines,
-          banner: wasPending ? 'COMMANDE MODIFIÉE' : null,
-        );
+        if (wasPending) {
+          _sentToKitchen = before;
+          await _kitchenChanges(number: r.number, cashier: user.name, lines: lines);
+        } else {
+          await _kitchen(number: r.number, mode: _mode, cashier: user.name, lines: lines);
+        }
       } catch (e) {
         error = '$e';
       }
@@ -178,6 +235,7 @@ class _PosScreenState extends State<PosScreen> {
       _cart.clear();
       _kitchenSent = false;
       _pendingId = null;
+      _sentToKitchen = null;
       _pendingNumber = null;
     });
     _hw.clearDisplay().catchError((_) {});
@@ -209,8 +267,10 @@ class _PosScreenState extends State<PosScreen> {
       _pendingId = sale['id'] as int;
       _pendingNumber = sale['number'] as int;
       _kitchenSent = true;
+      _sentToKitchen = _snapshot(_cart);
+      _sentProducts = {for (final l in _cart) _key(l): l.product};
     });
-    _hw.showAmount(fmtDisplay(_total)).catchError((_) {});
+    _hw.showAmount(fmtDisplay(_total)).catchError(_displayError);
   }
 
   /// Annule une commande (en attente ou payée), motif facultatif ; prévient la cuisine si elle n'était pas payée.
@@ -236,6 +296,7 @@ class _PosScreenState extends State<PosScreen> {
         _cart.clear();
         _kitchenSent = false;
         _pendingId = null;
+        _sentToKitchen = null;
         _pendingNumber = null;
       });
       _hw.clearDisplay().catchError((_) {});
@@ -298,6 +359,8 @@ class _PosScreenState extends State<PosScreen> {
     setState(() => _busy = true);
     final user = Session.I.user!;
     final lines = List<CartLine>.from(_cart);
+    final wasPending = _pendingId != null;
+    final pendingBefore = _pendingId;
     final number = SaleRepo.record(
       dayId: day.id,
       userId: user.id,
@@ -311,13 +374,11 @@ class _PosScreenState extends State<PosScreen> {
     final errors = <String>[];
     if (!_kitchenSent) {
       try {
-        await _kitchen(
-          number: number,
-          mode: _mode,
-          cashier: user.name,
-          lines: lines,
-          banner: _pendingId != null ? 'COMMANDE MODIFIÉE' : null,
-        );
+        if (wasPending && pendingBefore != null) {
+          await _kitchenChanges(number: number, cashier: user.name, lines: lines);
+        } else {
+          await _kitchen(number: number, mode: _mode, cashier: user.name, lines: lines);
+        }
       } catch (e) {
         errors.add('Cuisine : $e');
       }
@@ -347,6 +408,7 @@ class _PosScreenState extends State<PosScreen> {
       _cart.clear();
       _kitchenSent = false;
       _pendingId = null;
+      _sentToKitchen = null;
       _pendingNumber = null;
     });
     // L'écran client garde le total quelques secondes, puis s'efface pour le client suivant.

@@ -673,12 +673,18 @@ class ChargesRepo {
     final f = start.toIso8601String();
     final t = end.toIso8601String();
     int one(String sql) => (_db.select(sql, [f, t]).first['t'] as num).toInt();
-    final sales = one("SELECT COALESCE(SUM(total), 0) AS t FROM sales WHERE status = 'paid' AND created_at >= ? AND created_at < ?");
+    // Une vente compte pour le jour où la caisse a été ouverte (une journée qui finit après minuit reste entière).
+    final sales = one("SELECT COALESCE(SUM(s.total), 0) AS t FROM sales s LEFT JOIN days d ON d.id = s.day_id "
+        "WHERE s.status = 'paid' AND COALESCE(d.opened_at, s.created_at) >= ? AND COALESCE(d.opened_at, s.created_at) < ?");
     final purchases = one('SELECT COALESCE(SUM(total), 0) AS t FROM purchases WHERE cancelled = 0 AND opening = 0 AND created_at >= ? AND created_at < ?');
     final goodsExpenses = one(
-        "SELECT COALESCE(SUM(amount), 0) AS t FROM expenses WHERE cancelled = 0 AND category IN ('Matière', 'Emballages') AND created_at >= ? AND created_at < ?");
+        "SELECT COALESCE(SUM(amount), 0) AS t FROM expenses e WHERE cancelled = 0 AND category IN ('Matière', 'Emballages') "
+        "AND COALESCE((SELECT opened_at FROM days WHERE id = e.day_id), e.created_at) >= ? "
+        "AND COALESCE((SELECT opened_at FROM days WHERE id = e.day_id), e.created_at) < ?");
     final other = one(
-        "SELECT COALESCE(SUM(amount), 0) AS t FROM expenses WHERE cancelled = 0 AND category IN ('Entretien', 'Divers') AND created_at >= ? AND created_at < ?");
+        "SELECT COALESCE(SUM(amount), 0) AS t FROM expenses e WHERE cancelled = 0 AND category IN ('Entretien', 'Divers') "
+        "AND COALESCE((SELECT opened_at FROM days WHERE id = e.day_id), e.created_at) >= ? "
+        "AND COALESCE((SELECT opened_at FROM days WHERE id = e.day_id), e.created_at) < ?");
     final days = monthDays(start, now ?? DateTime.now());
     final daysLeft = days.left;
     final elapsed = days.elapsed;

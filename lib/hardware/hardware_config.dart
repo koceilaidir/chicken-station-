@@ -33,6 +33,7 @@ class HardwareConfig {
     this.displayProtocol = DisplayProtocol.led8,
     this.simulate = true,
     this.prettyFont = true,
+    this.closeOldPos = true,
   });
 
   String ticketPrinterName;
@@ -53,6 +54,9 @@ class HardwareConfig {
   /// Tickets dessinés avec une vraie police lisible (envoyés en image) plutôt qu'avec la police de l'imprimante.
   bool prettyFont;
 
+  /// Au démarrage, ferme l'ancienne caisse (Optima) qui bloque le port de l'écran client.
+  bool closeOldPos;
+
   Map<String, dynamic> toJson() => {
         'ticketPrinterName': ticketPrinterName,
         'codePage': codePage,
@@ -66,6 +70,7 @@ class HardwareConfig {
         'displayProtocol': displayProtocol.name,
         'simulate': simulate,
         'prettyFont': prettyFont,
+        'closeOldPos': closeOldPos,
       };
 
   factory HardwareConfig.fromJson(Map<String, dynamic> j) {
@@ -88,6 +93,7 @@ class HardwareConfig {
       displayProtocol: proto,
       simulate: (j['simulate'] ?? true) as bool,
       prettyFont: (j['prettyFont'] ?? true) as bool,
+      closeOldPos: (j['closeOldPos'] ?? true) as bool,
     );
   }
 

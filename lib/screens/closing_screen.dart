@@ -104,6 +104,7 @@ class _ClosingScreenState extends State<ClosingScreen> {
           reason: _reason.text.trim(),
           closedBy: user.name,
           expenses: expenses,
+          drawerOpenings: ExpenseRepo.drawerOpenings(s.day.openedAt).length,
         ));
       }
     } catch (e) {
@@ -220,6 +221,9 @@ class _ClosingScreenState extends State<ClosingScreen> {
                   reason: d.reason ?? '',
                   closedBy: d.closedBy ?? '',
                   expenses: expenses,
+                  drawerOpenings: ExpenseRepo.drawerOpenings(d.openedAt)
+                      .where((o) => d.closedAt == null || o.at.isBefore(d.closedAt!))
+                      .length,
                 ));
                 if (mounted) toast(context, 'Z envoyé à l\'imprimante.');
               } catch (e) {
@@ -332,6 +336,27 @@ class _ClosingScreenState extends State<ClosingScreen> {
     final left = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (seeMoney)
+          Builder(builder: (_) {
+            final opens = ExpenseRepo.drawerOpenings(day.openedAt);
+            if (opens.isEmpty) return const SizedBox.shrink();
+            return Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(color: AppColors.redSoft, borderRadius: BorderRadius.circular(14)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Tiroir ouvert sans vente : ${opens.length} fois aujourd\'hui',
+                      style: const TextStyle(color: AppColors.redText, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 4),
+                  for (final o in opens)
+                    Text('${fmtTime(o.at)} · ${o.user}${o.reason.isEmpty ? '' : ' · ${o.reason}'}',
+                        style: const TextStyle(color: AppColors.redText)),
+                ],
+              ),
+            );
+          }),
         if (seeMoney) ...[
           // Résumé : ce qui est entré, ce qui est sorti. La recette ne compte jamais le fond.
           IosCard(

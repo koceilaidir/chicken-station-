@@ -667,10 +667,26 @@ class ExpenseRepo {
       rethrow;
     }
     AppDb.I.audit(userId, 'depense_annulee', '${e['label']} · ${fmtDa(e['amount'] as int)} · motif : $reason');
+    // L'argent revient dans le tiroir : il s'ouvre pour le remettre.
+    if (e['source'] == 'caisse') onCashDrawer?.call();
   }
 
   /// [source] 'caisse' : l'argent sort du tiroir. 'coffre' : il sort du coffre maison.
   /// Renvoie l'identifiant de la dépense. [log] false : l'appelant note lui-même l'action dans le journal.
+  /// Appelé quand de l'argent sort du tiroir ou y revient (dépense de caisse, annulation) :
+  /// branché sur l'ouverture du tiroir-caisse au démarrage de l'appli.
+  static void Function()? onCashDrawer;
+
+  /// Ouvertures du tiroir sans vente ni dépense depuis [since] : qui, quand, pourquoi.
+  static List<({DateTime at, String user, String reason})> drawerOpenings(DateTime since) => _db
+      .select(
+        "SELECT a.at, a.detail, COALESCE(u.name, '?') AS name FROM audit a LEFT JOIN users u ON u.id = a.user_id "
+        "WHERE a.action = 'tiroir_sans_vente' AND a.at >= ? ORDER BY a.at",
+        [since.toIso8601String()],
+      )
+      .map((r) => (at: DateTime.parse(r['at'] as String), user: r['name'] as String, reason: r['detail'] as String))
+      .toList();
+
   static int add({
     required int? dayId,
     required int userId,
@@ -696,6 +712,8 @@ class ExpenseRepo {
     if (log) {
       AppDb.I.audit(userId, 'depense', '$label · ${fmtDa(amount)} · $category · payée ${source == 'coffre' ? 'du coffre' : 'de la caisse'}');
     }
+    // L'argent sort du tiroir : il s'ouvre tout seul (plus besoin de la clé).
+    if (source == 'caisse') onCashDrawer?.call();
     return id;
   }
 }

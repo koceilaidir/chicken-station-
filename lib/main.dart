@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:chicken_station/data/repos.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -39,6 +40,8 @@ Future<void> main() async {
     return;
   }
   Session.closeLeftoverSession();
+  // Chaque dépense payée avec la caisse ouvre le tiroir : la clé peut rester dans la poche du gérant.
+  ExpenseRepo.onCashDrawer = () => HardwareService.I.openDrawer().catchError((_) {});
   // F11 : plein écran / fenêtre (gérant du matériel seulement). Écouteur global : il ne prend pas
   // le focus clavier, la saisie du code PIN au clavier reste possible.
   HardwareKeyboard.instance.addHandler((e) {
@@ -50,6 +53,12 @@ Future<void> main() async {
   });
   runApp(const ChickenStationApp());
   WindowsShell.applyFullscreenAtStartup(Settings.fullscreen);
+  // L'ancienne caisse garde le port de l'écran client : on la ferme si elle s'est relancée.
+  if (!HardwareService.I.simulate && HardwareService.I.config.closeOldPos) {
+    WindowsShell.closeOldPos().then((closed) {
+      if (closed.isNotEmpty) AppDb.I.audit(null, 'materiel', 'Ancienne caisse fermée au démarrage : ${closed.join(', ')}');
+    });
+  }
   if (BackupService.dueAtStartup) BackupService.auto('démarrage');
 }
 
