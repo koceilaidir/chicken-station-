@@ -496,7 +496,9 @@ class _PurchasingScreenState extends State<PurchasingScreen> {
           if (history.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 10), child: Text('Rien pour le moment.')),
           for (final e in history)
             _HistoryRow(
-              title: e.opening ? e.label : (e.isPurchase ? StockRepo.receptionLines(e.id).join(' · ') : e.label),
+              title: e.isPurchase && !e.opening && StockRepo.receptionLines(e.id).isNotEmpty
+                  ? StockRepo.receptionLines(e.id).join(' · ')
+                  : e.label,
               value: '${e.isPurchase ? '+' : '−'} ${fmtDa(e.amount)}',
               sub: e.opening ? fmtDateTime(e.at) : (e.isPurchase ? '${fmtDateTime(e.at)} · ${e.label}' : fmtDateTime(e.at)),
               color: e.isPurchase ? AppColors.redText : AppColors.greenText,

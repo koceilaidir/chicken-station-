@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/db.dart';
 import '../data/models.dart';
 import '../data/repos.dart';
+import '../data/settings.dart';
 import '../hardware/hardware_service.dart';
 import '../hardware/tickets.dart';
 import '../state/session.dart';
@@ -873,8 +874,10 @@ class _PosScreenState extends State<PosScreen> {
                         child: SecondaryButton(label: 'Payer après', onPressed: _cart.isEmpty || _busy ? null : _hold),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(child: SecondaryButton(label: 'TPE', onPressed: _cart.isEmpty ? null : () => _pay('card'))),
+                    if (Settings.tpe) ...[
+                      const SizedBox(width: 8),
+                      Expanded(child: SecondaryButton(label: 'TPE', onPressed: _cart.isEmpty ? null : () => _pay('card'))),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 8),

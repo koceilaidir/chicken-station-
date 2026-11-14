@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/models.dart';
 import '../data/repos.dart';
+import '../data/settings.dart';
 import '../state/session.dart';
 import '../ui/format.dart';
 import '../ui/theme.dart';
@@ -365,7 +366,7 @@ class _CatchUpDialogState extends State<_CatchUpDialog> {
               ),
               if (_withCard)
                 Row(children: [field('Payé par TPE', _card, 'DA')])
-              else
+              else if (Settings.tpe)
                 Align(
                   alignment: Alignment.centerLeft,
                   child: TextButton(onPressed: () => setState(() => _withCard = true), child: const Text('+ Paiements par TPE')),

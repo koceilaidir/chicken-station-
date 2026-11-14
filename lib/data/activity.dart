@@ -31,7 +31,7 @@ class ActivityEvent {
 enum ActivityKind {
   ventes('Ventes', Icons.receipt_long_outlined, Color(0xFF1E7A34), ['vente']),
   alertes('Annulations et tiroir', Icons.warning_amber_rounded, Color(0xFFC4000F),
-      ['annulation_ticket', 'tiroir_sans_vente', 'pin_incorrect']),
+      ['annulation_ticket', 'tiroir_sans_vente', 'fond_corrige', 'pin_incorrect']),
   argent('Argent', Icons.payments_outlined, Color(0xFF8A6A00),
       ['ouverture_journee', 'cloture_journee', 'depense', 'depense_annulee', 'coffre']),
   connexions('Connexions', Icons.login, Color(0xFF6E6E73),
@@ -66,6 +66,7 @@ const activityLabels = <String, String>{
   'vente': 'Vente',
   'annulation_ticket': 'Annulation',
   'tiroir_sans_vente': 'Tiroir ouvert sans vente',
+  'fond_corrige': 'Fond du matin corrigé',
   'pin_incorrect': 'Code PIN incorrect',
   'ouverture_journee': 'Ouverture de la journée',
   'cloture_journee': 'Clôture de la journée',

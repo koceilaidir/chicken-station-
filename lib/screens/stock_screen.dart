@@ -447,28 +447,8 @@ class _ExpenseHistoryState extends State<_ExpenseHistory> {
 
 // ============================================================================ fenêtre « bon d'achat »
 
-class _Line {
-  _Line(String name, {this.unit = 'kg'}) : name = TextEditingController(text: name);
-  final TextEditingController name;
-  final qty = TextEditingController();
-  final price = TextEditingController();
-
-  /// 'kg' ou 'pièce' : la quantité et le prix suivent cette unité.
-  String unit;
-
-  double get q => parseQty(qty.text) ?? 0;
-  int get p => parseAmount(price.text) ?? 0;
-  int get total => (q * p).round();
-
-  void dispose() {
-    name.dispose();
-    qty.dispose();
-    price.dispose();
-  }
-}
-
-/// Bon d'achat d'un fournisseur, tel qu'on le reçoit : date, produits tapés à la main
-/// (quantité ou kilos × prix), et ce qu'on lui donne maintenant.
+/// Bon d'achat d'un fournisseur : on tape seulement le montant du bon (le papier est gardé),
+/// puis ce qu'on lui donne maintenant, ou rien (à crédit, on paiera plus tard depuis sa fiche).
 /// Sans fournisseur ([supplier] null) : achat payé sur place (marché, dépannage).
 class ReceptionDialog extends StatefulWidget {
   const ReceptionDialog({super.key, this.supplier});
@@ -479,7 +459,7 @@ class ReceptionDialog extends StatefulWidget {
 }
 
 class _ReceptionDialogState extends State<ReceptionDialog> {
-  final _lines = <_Line>[];
+  final _total = TextEditingController();
   final _paid = TextEditingController();
   final _note = TextEditingController();
   String _source = 'caisse';
@@ -489,31 +469,14 @@ class _ReceptionDialogState extends State<ReceptionDialog> {
   Supplier? get _s => widget.supplier;
 
   @override
-  void initState() {
-    super.initState();
-    _addLine(_s?.product ?? '');
-  }
-
-  @override
   void dispose() {
-    for (final l in _lines) {
-      l.dispose();
-    }
+    _total.dispose();
     _paid.dispose();
     _note.dispose();
     super.dispose();
   }
 
-  void _addLine(String name) {
-    final l = _Line(name);
-    if (name.isNotEmpty) {
-      final last = StockRepo.lastPrice(name, l.unit);
-      if (last > 0) l.price.text = '$last';
-    }
-    _lines.add(l);
-  }
-
-  int get _total => _lines.fold<int>(0, (a, l) => a + l.total);
+  int get _amount => parseAmount(_total.text) ?? 0;
   int get _paidNow => parseAmount(_paid.text) ?? 0;
 
   bool _sameDay(DateTime a, DateTime b) => a.year == b.year && a.month == b.month && a.day == b.day;
@@ -525,19 +488,14 @@ class _ReceptionDialogState extends State<ReceptionDialog> {
   }
 
   Future<void> _save() async {
-    final valid = _lines.where((l) => l.name.text.trim().isNotEmpty && l.q > 0 && l.p > 0).toList();
-    if (valid.isEmpty) {
-      toast(context, 'Tapez au moins un produit avec sa quantité et son prix.', error: true);
+    final total = _amount;
+    if (total <= 0) {
+      toast(context, 'Tapez le montant du bon.', error: true);
       return;
     }
-    final total = valid.fold<int>(0, (a, l) => a + l.total);
-    final paid = _paidNow;
+    final paid = _s == null ? total : _paidNow;
     if (paid > 0 && !Session.I.can(Perm.fournisseurs)) {
       toast(context, "Vous n'avez pas le droit de payer les fournisseurs : laissez « payé » vide.", error: true);
-      return;
-    }
-    if (_s == null && paid != total) {
-      toast(context, 'Sans fournisseur, le bon se paie en entier sur place.', error: true);
       return;
     }
     var source = _source;
@@ -549,14 +507,8 @@ class _ReceptionDialogState extends State<ReceptionDialog> {
     final uid = Session.I.user!.id;
     setState(() => _saving = true);
     try {
-      StockRepo.receive(
-        userId: uid,
-        supplierId: _s?.id,
-        lines: [for (final l in valid) ReceptionLine(StockRepo.articleNamed(uid, l.name.text, l.unit), l.q, l.p)],
-        note: _note.text.trim(),
-        supplierName: _s?.name ?? '',
-        date: _sameDay(_date, DateTime.now()) ? null : _date,
-      );
+      SupplierRepo.addBon(uid, _s?.id, total,
+          date: _sameDay(_date, DateTime.now()) ? null : _date, note: _note.text.trim());
       if (paid > 0) {
         if (_s != null) {
           _s!.debt += total;
@@ -581,7 +533,7 @@ class _ReceptionDialogState extends State<ReceptionDialog> {
     final today = DateTime.now();
     final yesterday = today.subtract(const Duration(days: 1));
     final before = _s?.debt ?? 0;
-    final after = before + _total - _paidNow;
+    final after = before + _amount - _paidNow;
     const label = TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w600);
     return Dialog(
       backgroundColor: Colors.white,
@@ -589,14 +541,13 @@ class _ReceptionDialogState extends State<ReceptionDialog> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
       insetPadding: const EdgeInsets.all(24),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 820, maxHeight: 700),
+        constraints: const BoxConstraints(maxWidth: 560, maxHeight: 640),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 20, 24, 18),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // En-tête : le fournisseur (fixe) et ce qu'on lui doit déjà.
               Row(
                 children: [
                   Container(
@@ -630,185 +581,97 @@ class _ReceptionDialogState extends State<ReceptionDialog> {
                     ),
                 ],
               ),
-              const SizedBox(height: 14),
-              // Tout le contenu défile : le clavier de l'écran tactile ne cache jamais le champ en cours.
+              const SizedBox(height: 16),
               Flexible(
                 child: SingleChildScrollView(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-              // Date du bon
-              Row(
-                children: [
-                  const Text('Date du bon', style: label),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Wrap(
-                      spacing: 6,
-                      children: [
-                        ChoiceChip(
-                            label: const Text("Aujourd'hui"),
-                            selected: _sameDay(_date, today),
-                            onSelected: (_) => setState(() => _date = today)),
-                        ChoiceChip(
-                            label: const Text('Hier'),
-                            selected: _sameDay(_date, yesterday),
-                            onSelected: (_) => setState(() => _date = yesterday)),
-                        ChoiceChip(
-                          avatar: const Icon(Icons.calendar_today, size: 16),
-                          label: Text(_sameDay(_date, today) || _sameDay(_date, yesterday) ? 'Autre date' : fmtDate(_date)),
-                          selected: !_sameDay(_date, today) && !_sameDay(_date, yesterday),
-                          onSelected: (_) => _pickDate(),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              const Row(
-                children: [
-                  Expanded(flex: 5, child: Text('Produit', style: label)),
-                  SizedBox(width: 8),
-                  SizedBox(width: 150, child: Text('Vendu au', style: label)),
-                  SizedBox(width: 8),
-                  Expanded(flex: 2, child: Text('Quantité', style: label)),
-                  SizedBox(width: 8),
-                  Expanded(flex: 3, child: Text('Prix (DA)', style: label)),
-                  SizedBox(width: 136),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    for (final l in _lines)
-                      Container(
-                        key: ObjectKey(l),
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(color: AppColors.fill, borderRadius: BorderRadius.circular(14)),
-                        child: Row(
+                      Wrap(
+                        spacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          const Text('Date du bon   ', style: label),
+                          ChoiceChip(
+                              label: const Text("Aujourd'hui"),
+                              selected: _sameDay(_date, today),
+                              onSelected: (_) => setState(() => _date = today)),
+                          ChoiceChip(
+                              label: const Text('Hier'),
+                              selected: _sameDay(_date, yesterday),
+                              onSelected: (_) => setState(() => _date = yesterday)),
+                          ChoiceChip(
+                            avatar: const Icon(Icons.calendar_today, size: 16),
+                            label: Text(_sameDay(_date, today) || _sameDay(_date, yesterday) ? 'Autre date' : fmtDate(_date)),
+                            selected: !_sameDay(_date, today) && !_sameDay(_date, yesterday),
+                            onSelected: (_) => _pickDate(),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      const Text('Montant du bon', style: label),
+                      const SizedBox(height: 4),
+                      FieldBox(
+                        controller: _total,
+                        hint: 'Total écrit sur le bon, en DA',
+                        numeric: true,
+                        big: true,
+                        autofocus: true,
+                        onChanged: (_) => setState(() {}),
+                      ),
+                      const SizedBox(height: 14),
+                      if (canPay && _s != null) ...[
+                        const Text('Donné maintenant', style: label),
+                        const SizedBox(height: 4),
+                        Row(
                           children: [
                             Expanded(
-                              flex: 5,
-                              child: _WhiteField(controller: l.name, hint: 'ex. Viande', onChanged: (_) => setState(() {})),
-                            ),
-                            const SizedBox(width: 8),
-                            SizedBox(
-                              width: 150,
-                              child: IosSegmented<String>(
-                                values: const ['kg', 'pièce'],
-                                selected: l.unit,
-                                label: (v) => v == 'kg' ? 'Kilo' : 'Pièce',
-                                onChanged: (v) => setState(() => l.unit = v),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              flex: 2,
-                              child: _WhiteField(
-                                controller: l.qty,
-                                hint: l.unit == 'kg' ? 'kg' : 'nombre',
-                                decimal: true,
-                                onChanged: (_) => setState(() {}),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              flex: 3,
-                              child: _WhiteField(
-                                controller: l.price,
-                                hint: l.unit == 'kg' ? 'DA le kilo' : 'DA la pièce',
+                              child: FieldBox(
+                                controller: _paid,
+                                hint: 'Vide = à crédit, payé plus tard',
                                 numeric: true,
                                 onChanged: (_) => setState(() {}),
                               ),
                             ),
-                            SizedBox(
-                              width: 100,
-                              child: Text(fmtDa(l.total),
-                                  textAlign: TextAlign.right, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
-                            ),
-                            IconButton(
-                              tooltip: 'Enlever la ligne',
-                              onPressed: _lines.length <= 1
-                                  ? null
-                                  : () => setState(() {
-                                        _lines.remove(l);
-                                        l.dispose();
-                                      }),
-                              icon: const Icon(Icons.close, size: 18),
+                            const SizedBox(width: 8),
+                            SecondaryButton(
+                              label: 'Tout le bon',
+                              onPressed: _amount > 0 ? () => setState(() => _paid.text = '$_amount') : null,
                             ),
                           ],
                         ),
-                      ),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Tooltip(
-                        message: 'Ajouter un produit',
-                        child: Material(
-                          color: AppColors.yellow,
-                          shape: const CircleBorder(),
-                          child: InkWell(
-                            customBorder: const CircleBorder(),
-                            onTap: () => setState(() => _addLine('')),
-                            child: const SizedBox(width: 44, height: 44, child: Icon(Icons.add, size: 26)),
+                        const SizedBox(height: 8),
+                      ],
+                      if (canPay)
+                        IosSegmented<String>(
+                          values: const ['caisse', 'coffre'],
+                          selected: _source,
+                          label: (v) => v == 'coffre' ? 'Payé depuis le coffre' : 'Payé depuis la caisse',
+                          onChanged: (v) => setState(() => _source = v),
+                        ),
+                      if (_s != null && _amount > 0)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            after > 0
+                                ? 'Après ce bon : il restera ${fmtDa(after)} à lui payer.'
+                                : after < 0
+                                    ? 'Après ce bon : ${fmtDa(-after)} d\'avance chez lui.'
+                                    : 'Après ce bon : vous ne lui devez plus rien.',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: after > 0 ? AppColors.redText : AppColors.greenText,
+                            ),
                           ),
                         ),
-                      ),
-                    ),
-                  ],
-                ),
-              const Divider(height: 22),
-              Row(
-                children: [
-                  const Text('Total du bon', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                  const Spacer(),
-                  Text(fmtDa(_total), style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.5)),
-                ],
-              ),
-              const SizedBox(height: 10),
-              if (canPay) ...[
-                Row(
-                  children: [
-                    Expanded(
-                      child: FieldBox(
-                        controller: _paid,
-                        hint: _s == null ? 'Payé maintenant (en entier)' : 'Donné maintenant (vide = à crédit)',
-                        numeric: true,
-                        onChanged: (_) => setState(() {}),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    SecondaryButton(label: 'Montant du bon', onPressed: () => setState(() => _paid.text = '$_total')),
-                    const SizedBox(width: 8),
-                    IosSegmented<String>(
-                      expand: false,
-                      values: const ['caisse', 'coffre'],
-                      selected: _source,
-                      label: (v) => v == 'coffre' ? 'Du coffre' : 'De la caisse',
-                      onChanged: (v) => setState(() => _source = v),
-                    ),
-                  ],
-                ),
-                if (_s != null && _total > 0)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Text(
-                      after > 0
-                          ? 'Après ce bon : il restera ${fmtDa(after)} à lui payer.'
-                          : after < 0
-                              ? 'Après ce bon : ${fmtDa(-after)} d\'avance chez lui.'
-                              : 'Après ce bon : vous ne lui devez plus rien.',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: after > 0 ? AppColors.redText : AppColors.greenText,
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: 10),
-              ],
-              FieldBox(controller: _note, hint: 'Remarque, n° du bon (facultatif)'),
+                      if (_s == null)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 8),
+                          child: Text('Sans fournisseur, le bon est payé en entier maintenant.',
+                              style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                        ),
+                      const SizedBox(height: 14),
+                      FieldBox(controller: _note, hint: 'N° du bon, remarque (facultatif)'),
                     ],
                   ),
                 ),
@@ -828,22 +691,4 @@ class _ReceptionDialogState extends State<ReceptionDialog> {
       ),
     );
   }
-}
-
-/// Champ blanc, pour les lignes du bon posées sur fond gris.
-class _WhiteField extends StatelessWidget {
-  const _WhiteField({required this.controller, required this.hint, this.numeric = false, this.decimal = false, this.onChanged});
-  final TextEditingController controller;
-  final String hint;
-  final bool numeric;
-  final bool decimal;
-  final ValueChanged<String>? onChanged;
-
-  @override
-  Widget build(BuildContext context) => Theme(
-        data: Theme.of(context).copyWith(
-          inputDecorationTheme: Theme.of(context).inputDecorationTheme.copyWith(fillColor: Colors.white),
-        ),
-        child: FieldBox(controller: controller, hint: hint, numeric: numeric, decimal: decimal, onChanged: onChanged, fill: Colors.white),
-      );
 }

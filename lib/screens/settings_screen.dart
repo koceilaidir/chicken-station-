@@ -345,6 +345,19 @@ class _DisplaySettingsScreenState extends State<DisplaySettingsScreen> {
               const Divider(),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
+                value: Settings.tpe,
+                activeTrackColor: AppColors.green,
+                onChanged: (v) {
+                  Settings.tpe = v;
+                  logActivity('reglages', v ? 'Paiement par TPE activé' : 'Paiement par TPE désactivé');
+                  setState(() {});
+                },
+                title: const Text('Paiement par carte (TPE)', style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: const Text('Affiche le bouton TPE en caisse. À activer seulement si la boutique a un terminal de paiement.'),
+              ),
+              const Divider(),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
                 value: _autostart ?? false,
                 activeTrackColor: AppColors.green,
                 onChanged: _autostart == null ? null : _setAutostart,

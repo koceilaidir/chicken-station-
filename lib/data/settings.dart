@@ -19,6 +19,10 @@ class Settings {
 
   static void setFlag(String key, bool value) => set(key, value ? '1' : '0');
 
+  /// Paiement par carte (TPE) proposé en caisse. Désactivé par défaut : la boutique n'en a pas.
+  static bool get tpe => flag('tpe');
+  static set tpe(bool v) => setFlag('tpe', v);
+
   static int number(String key, int fallback) => int.tryParse(get(key)) ?? fallback;
 
   static void setNumber(String key, int value) => set(key, '$value');

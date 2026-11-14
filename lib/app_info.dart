@@ -1,2 +1,2 @@
 /// Version affichée dans l'appli et enregistrée dans chaque sauvegarde.
-const appVersion = '0.7.1';
+const appVersion = '0.7.3';

@@ -138,8 +138,9 @@ class Tickets {
         ..line('RECETTE')
         ..bold(false)
         ..columns('Tickets', '${s.tickets}')
-        ..columns('Espèces', fmtNum(s.cashSales))
-        ..columns('TPE', fmtNum(s.cardSales))
+        ..columns('Espèces', fmtNum(s.cashSales));
+      if (s.cardSales > 0) p.columns('TPE', fmtNum(s.cardSales));
+      p
         ..columns('Annulations (${s.cancelledCount})', fmtNum(s.cancelledTotal))
         ..bold(true)
         ..columns('TOTAL VENTES', '${fmtNum(s.totalSales)} DA')

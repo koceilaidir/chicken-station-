@@ -150,6 +150,53 @@ class _ClosingScreenState extends State<ClosingScreen> {
     }
   }
 
+  /// Le fond tapé à l'ouverture était faux : on le corrige (motif facultatif, tracé dans l'activité).
+  Future<void> _editFund(Day day) async {
+    final amount = TextEditingController(text: '${day.openingFund}');
+    final reason = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(scrollable: true, 
+        title: const Text('Corriger le fond du matin'),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Tapé à l\'ouverture : ${fmtDa(day.openingFund)}',
+                  style: const TextStyle(color: AppColors.textSecondary)),
+              const SizedBox(height: 10),
+              FieldBox(controller: amount, hint: 'Vrai fond du matin en DA', numeric: true, big: true),
+              const SizedBox(height: 10),
+              FieldBox(controller: reason, hint: 'Motif (facultatif)'),
+              const SizedBox(height: 6),
+              const Text("Le coffre et l'argent attendu dans la caisse sont recalculés.",
+                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Retour')),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Corriger')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final v = parseAmount(amount.text);
+    if (v == null) {
+      toast(context, 'Tapez le montant du fond.', error: true);
+      return;
+    }
+    try {
+      DayRepo.setFund(Session.I.user!.id, day, v, reason.text.trim());
+      toast(context, 'Fond corrigé : ${fmtDa(v)}.');
+      setState(() {});
+    } catch (e) {
+      toast(context, e is StateError ? e.message : '$e', error: true);
+    }
+  }
+
   /// Dernière journée clôturée (la veille en général).
   Day? _lastClosed() {
     final l = DayRepo.closedBetween(DateTime.now().subtract(const Duration(days: 60)), DateTime.now().add(const Duration(days: 1)));
@@ -180,7 +227,7 @@ class _ClosingScreenState extends State<ClosingScreen> {
                 KeyValueRow("Chiffre d'affaires", fmtDa(s.totalSales), bold: true),
                 KeyValueRow('Tickets', '${s.tickets}', sub: 'panier moyen ${fmtDa(s.averageTicket)}'),
                 KeyValueRow('Espèces', fmtDa(s.cashSales)),
-                KeyValueRow('TPE', fmtDa(s.cardSales)),
+                if (s.cardSales > 0) KeyValueRow('TPE', fmtDa(s.cardSales)),
                 if (s.cancelledCount > 0) KeyValueRow('Annulations', '${s.cancelledCount} · ${fmtDa(s.cancelledTotal)}'),
                 for (final f in s.byFamily.entries) KeyValueRow('  ${f.key}', fmtDa(f.value)),
                 const SizedBox(height: 10),
@@ -365,12 +412,22 @@ class _ClosingScreenState extends State<ClosingScreen> {
               children: [
                 const SectionLabel('Résumé de la journée'),
                 const SizedBox(height: 4),
-                KeyValueRow('Fond ramené ce matin', fmtDa(day.openingFund)),
+                Row(
+                  children: [
+                    Expanded(child: KeyValueRow('Fond ramené ce matin', fmtDa(day.openingFund))),
+                    if (Session.I.can(Perm.cloture))
+                      IconButton(
+                        tooltip: 'Corriger le fond du matin',
+                        icon: const Icon(Icons.edit_outlined, size: 18, color: AppColors.textSecondary),
+                        onPressed: () => _editFund(day),
+                      ),
+                  ],
+                ),
                 KeyValueRow(
                   'Recette du jour (sans le fond)',
                   fmtDa(s.totalSales),
                   bold: true,
-                  sub: '${s.tickets} ticket(s) · espèces ${fmtDa(s.cashSales)} · TPE ${fmtDa(s.cardSales)}',
+                  sub: '${s.tickets} ticket(s)${s.cardSales > 0 ? ' · espèces ${fmtDa(s.cashSales)} · TPE ${fmtDa(s.cardSales)}' : ''}',
                 ),
                 KeyValueRow('Entré en espèces', '+ ${fmtDa(s.cashSales)}', valueColor: AppColors.greenText),
                 KeyValueRow('Sorti de la caisse (dépenses)', '− ${fmtDa(s.cashExpenses)}', valueColor: AppColors.redText),

@@ -135,6 +135,25 @@ class SupplierRepo {
     AppDb.I.audit(userId, 'fournisseur', "Crédit d'avant l'appli : $name · ${fmtDa(amount)}${note.isEmpty ? '' : ' · $note'}");
   }
 
+  /// Bon d'achat saisi par son montant seulement (le bon papier est gardé à part).
+  /// Sans fournisseur ([supplierId] null) : achat payé sur place. Compte dans les achats du mois.
+  static int addBon(int userId, int? supplierId, int total, {DateTime? date, String note = ''}) {
+    if (total <= 0) throw StateError('Tapez le montant du bon.');
+    final at = date == null
+        ? DateTime.now()
+        : DateTime(date.year, date.month, date.day, DateTime.now().hour, DateTime.now().minute);
+    _db.execute(
+      'INSERT INTO purchases (created_at, user_id, supplier_id, total, note) VALUES (?, ?, ?, ?, ?)',
+      [at.toIso8601String(), userId, supplierId, total, note],
+    );
+    final id = _db.lastInsertRowId;
+    final name = supplierId == null
+        ? 'sans fournisseur'
+        : _db.select('SELECT name FROM suppliers WHERE id = ?', [supplierId]).first['name'] as String;
+    AppDb.I.audit(userId, 'reception', "Bon d'achat · $name · ${fmtDa(total)}${note.isEmpty ? '' : ' · $note'}");
+    return id;
+  }
+
   static int totalDebt() => all().fold<int>(0, (a, s) => a + (s.debt > 0 ? s.debt : 0));
 
   /// Réceptions et paiements d'un fournisseur, plus récents en premier (annulés compris, marqués).
@@ -152,7 +171,9 @@ class SupplierRepo {
         at: DateTime.parse(r['created_at'] as String),
         label: opening
             ? "Crédit d'avant l'appli${note.isEmpty ? '' : ' · $note'}"
-            : "Bon d'achat · ${r['n']} article(s)${note.isEmpty ? '' : ' · $note'}",
+            : (r['n'] as int) == 0
+                ? "Bon d'achat${note.isEmpty ? '' : ' · $note'}"
+                : "Bon d'achat · ${r['n']} article(s)${note.isEmpty ? '' : ' · $note'}",
         amount: r['total'] as int,
         isPurchase: true,
         cancelled: (r['cancelled'] as int) == 1,

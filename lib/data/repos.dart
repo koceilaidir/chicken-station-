@@ -265,6 +265,31 @@ class DayRepo {
     return byId(id)!;
   }
 
+  /// Corrige le fond du matin d'une journée encore ouverte (erreur de saisie à l'ouverture).
+  /// Le coffre suit : la sortie « fond » de ce jour est remise au bon montant. Tracé dans l'activité.
+  static void setFund(int userId, Day day, int fund, String reason) {
+    if (day.closedAt != null) throw StateError('Journée déjà clôturée : le fond ne peut plus être changé.');
+    if (fund < 0) throw StateError('Montant invalide.');
+    final old = day.openingFund;
+    if (old == fund) return;
+    _db.execute('BEGIN');
+    try {
+      _db.execute('UPDATE days SET opening_fund = ? WHERE id = ?', [fund, day.id]);
+      _db.execute("DELETE FROM safe_moves WHERE day_id = ? AND kind = 'fond'", [day.id]);
+      if (fund > 0) {
+        _db.execute(
+          'INSERT INTO safe_moves (created_at, user_id, label, amount, kind, day_id) VALUES (?, ?, ?, ?, ?, ?)',
+          [day.openedAt.toIso8601String(), userId, 'Fond de caisse ramené au resto (corrigé)', -fund, 'fond', day.id],
+        );
+      }
+      _db.execute('COMMIT');
+    } catch (_) {
+      _db.execute('ROLLBACK');
+      rethrow;
+    }
+    AppDb.I.audit(userId, 'fond_corrige', 'Fond du matin ${fmtDa(old)} → ${fmtDa(fund)}${reason.isEmpty ? '' : ' · motif : $reason'}');
+  }
+
   static DaySummary summary(Day day) {
     final paid = _db.select(
       "SELECT payment, COUNT(*) AS n, COALESCE(SUM(total), 0) AS t FROM sales WHERE day_id = ? AND status = 'paid' GROUP BY payment",
